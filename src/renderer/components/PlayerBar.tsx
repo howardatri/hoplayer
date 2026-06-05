@@ -3,7 +3,8 @@ import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Shuffle, Volume2, 
 import CoverArt from './CoverArt'
 import AudioSpectrum from './AudioSpectrum'
 import Slider from './Slider'
-import { usePlayer, setSeeking } from '@/hooks/usePlayer'
+import ProgressSlider from './ProgressSlider'
+import { usePlayer } from '@/hooks/usePlayer'
 import usePlayerStore from '@/store/playerStore'
 
 interface PlayerBarProps {
@@ -31,21 +32,10 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
   const toggleRepeat = usePlayerStore(s => s.toggleRepeat)
   const toggleShuffle = usePlayerStore(s => s.toggleShuffle)
 
-  // ---- Progress slider ----
-  const handleProgressChange = useCallback((v: number) => {
-    setSeeking(true) // block timeupdate during drag
-    // Update visual position only (don't seek audio yet)
-    usePlayerStore.getState().setProgress(v)
-    if (duration && isFinite(duration)) {
-      usePlayerStore.getState().setCurrentTime(v * duration)
-    }
-  }, [duration])
-
-  const handleProgressCommit = useCallback((v: number) => {
-    seek(v) // actually seek the audio; seek() sets _isSeeking and seeked clears it
+  const handleSeek = useCallback((ratio: number) => {
+    seek(ratio)
   }, [seek])
 
-  // ---- Volume slider ----
   const handleVolumeChange = useCallback((v: number) => {
     setVolume(v)
   }, [setVolume])
@@ -72,14 +62,7 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 40, textAlign: 'right', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
           {formatTime(currentTime)}
         </span>
-        <Slider
-          value={progress}
-          onChange={handleProgressChange}
-          onCommit={handleProgressCommit}
-          trackHeight={4}
-          thumbSize={14}
-          style={{ flex: 1 }}
-        />
+        <ProgressSlider progress={progress} onSeek={handleSeek} />
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 40, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
           {formatTime(duration)}
         </span>
@@ -130,7 +113,6 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
               onChange={handleVolumeChange}
               trackHeight={3}
               thumbSize={10}
-              showThumb={false}
               style={{ width: 80 }}
             />
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', width: 30, fontVariantNumeric: 'tabular-nums' }}>
