@@ -4,7 +4,6 @@ import type { Track } from '@shared/index'
 
 // =============================================
 // Module-level SINGLETON Audio element
-// Never recreated. Never duplicated.
 // =============================================
 const audio = new Audio()
 audio.preload = 'auto'
@@ -37,22 +36,29 @@ export function getAudioContext(): AudioContext | null { return audioContext }
 // ---- Load counter to ignore stale play() promises ----
 let loadId = 0
 
-// ---- Track current state imperatively ----
-let currentTrackId: string | null = null
+// ---- Seeking guard: when true, timeupdate events are ignored ----
+let _isSeeking = false
+let _seekTimeout: ReturnType<typeof setTimeout> | null = null
+
+export function setSeeking(v: boolean) {
+  _isSeeking = v
+  if (v) {
+    // Safety: auto-clear after 2s in case mouseup is missed
+    if (_seekTimeout) clearTimeout(_seekTimeout)
+    _seekTimeout = setTimeout(() => { _isSeeking = false }, 2000)
+  } else {
+    if (_seekTimeout) clearTimeout(_seekTimeout)
+  }
+}
 
 // ---- The ONE function that loads and optionally plays ----
 function loadAndPlay(track: Track, shouldPlay: boolean) {
   const myLoad = ++loadId
 
-  // Stop current playback immediately
   audio.pause()
-  currentTrackId = track.id
-
-  // Set source
   audio.src = `local://${encodeURIComponent(track.filePath)}`
   audio.load()
 
-  // Update store
   usePlayerStore.getState().setCurrentTrack(track)
 
   if (!shouldPlay) {
@@ -64,9 +70,8 @@ function loadAndPlay(track: Track, shouldPlay: boolean) {
   ensureWebAudio()
   if (audioContext?.state === 'suspended') audioContext.resume()
 
-  // Play when ready
   const tryPlay = () => {
-    if (myLoad !== loadId) return // superseded
+    if (myLoad !== loadId) return
     audio.play().then(() => {
       if (myLoad === loadId) usePlayerStore.getState().setIsPlaying(true)
     }).catch(e => {
@@ -88,6 +93,7 @@ function loadAndPlay(track: Track, shouldPlay: boolean) {
 
 // ---- Wire up audio events ONCE ----
 audio.addEventListener('timeupdate', () => {
+  if (_isSeeking) return // Don't update while user is dragging
   if (audio.duration && isFinite(audio.duration)) {
     usePlayerStore.getState().setCurrentTime(audio.currentTime)
     usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
@@ -143,10 +149,9 @@ let _controls: {
 export function getPlayerControls() { return _controls }
 
 // =============================================
-// The hook — thin wrapper, no state, no effects that create audio
+// Hook — thin wrapper
 // =============================================
 export function usePlayer() {
-  // Sync volume once
   useEffect(() => {
     audio.volume = usePlayerStore.getState().volume
     const unsub = usePlayerStore.subscribe(s => { audio.volume = s.volume })
@@ -166,21 +171,15 @@ export function usePlayer() {
     if (!currentTrack) return
 
     if (isPlaying) {
-      // PAUSE — simple, immediate
       audio.pause()
       usePlayerStore.getState().setIsPlaying(false)
     } else {
-      // RESUME
       ensureWebAudio()
       if (audioContext?.state === 'suspended') audioContext.resume()
-
       if (audio.readyState >= 2 && audio.src) {
-        // Audio is loaded — just resume
-        audio.play().then(() => {
-          usePlayerStore.getState().setIsPlaying(true)
-        }).catch(e => console.warn('[audio] resume failed:', e.message))
+        audio.play().then(() => usePlayerStore.getState().setIsPlaying(true))
+          .catch(e => console.warn('[audio] resume failed:', e.message))
       } else {
-        // Audio not loaded — reload and play
         loadAndPlay(currentTrack, true)
       }
     }
@@ -188,9 +187,14 @@ export function usePlayer() {
 
   const seek = useCallback((ratio: number) => {
     if (!audio.duration || !isFinite(audio.duration)) return
-    audio.currentTime = ratio * audio.duration
-    usePlayerStore.getState().setCurrentTime(audio.currentTime)
+    const newTime = ratio * audio.duration
+    audio.currentTime = newTime
+    // Update store immediately so UI reflects the seek
+    usePlayerStore.getState().setCurrentTime(newTime)
     usePlayerStore.getState().setProgress(ratio)
+    // Brief guard so timeupdate doesn't overwrite with stale value
+    _isSeeking = true
+    setTimeout(() => { _isSeeking = false }, 200)
   }, [])
 
   const setVolume = useCallback((vol: number) => {
@@ -202,7 +206,6 @@ export function usePlayer() {
   const playNext = useCallback(() => doPlayNext(), [])
   const playPrev = useCallback(() => doPlayPrev(), [])
 
-  // Register global controls
   useEffect(() => {
     _controls = { togglePlay, playNext, playPrev, setVolume, seek }
     return () => { _controls = null }

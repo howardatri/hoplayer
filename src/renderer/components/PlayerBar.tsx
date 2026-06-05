@@ -2,7 +2,7 @@ import { useRef, useCallback, useState, useEffect } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Shuffle, Volume2, VolumeX, Volume1, ListMusic, Mic2 } from 'lucide-react'
 import CoverArt from './CoverArt'
 import AudioSpectrum from './AudioSpectrum'
-import { usePlayer } from '@/hooks/usePlayer'
+import { usePlayer, setSeeking } from '@/hooks/usePlayer'
 import usePlayerStore from '@/store/playerStore'
 
 interface PlayerBarProps {
@@ -47,6 +47,7 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
     const p = getProgressFromEvent(e)
     setIsDragging(true)
     setDragProgress(p)
+    setSeeking(true) // Block timeupdate from overwriting during drag
   }, [getProgressFromEvent])
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
     const handleMouseUp = (e: MouseEvent) => {
       const p = getProgressFromEvent(e)
       setIsDragging(false)
-      seek(p)
+      seek(p) // seek() sets its own _isSeeking guard for 200ms
     }
 
     window.addEventListener('mousemove', handleMouseMove)
