@@ -13,66 +13,62 @@ import VideoPlayer from '@/pages/VideoPlayer'
 import usePlaylistStore from '@/store/playlistStore'
 import usePlayerStore from '@/store/playerStore'
 import { useThemeColor } from '@/hooks/useThemeColor'
+import { getPlayerControls } from '@/hooks/usePlayer'
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home')
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
   const [showLyrics, setShowLyrics] = useState(false)
-  const createPlaylist = usePlaylistStore((s) => s.createPlaylist)
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
-  const isPlaying = usePlayerStore((s) => s.isPlaying)
+  const createPlaylist = usePlaylistStore(s => s.createPlaylist)
+  const currentTrack = usePlayerStore(s => s.currentTrack)
   const [showVideoPlayer, setShowVideoPlayer] = useState(false)
 
-  // Dynamic theming from cover art
   useThemeColor(currentTrack?.filePath)
 
-  // Show video player when a video track starts playing
   useEffect(() => {
-    if (currentTrack?.format === 'video') {
-      setShowVideoPlayer(true)
-    }
+    if (currentTrack?.format === 'video') setShowVideoPlayer(true)
   }, [currentTrack])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — use global player controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
 
+      const ctrl = e.ctrlKey || e.metaKey
+      const controls = getPlayerControls()
+
       switch (e.code) {
         case 'Space':
           e.preventDefault()
-          usePlayerStore.getState().setIsPlaying(!usePlayerStore.getState().isPlaying)
+          controls?.togglePlay()
           break
         case 'ArrowRight':
-          if (e.ctrlKey || e.metaKey) usePlayerStore.getState().playNext()
+          if (ctrl) controls?.playNext()
           break
         case 'ArrowLeft':
-          if (e.ctrlKey || e.metaKey) usePlayerStore.getState().playPrev()
+          if (ctrl) controls?.playPrev()
           break
         case 'ArrowUp':
-          if (e.ctrlKey || e.metaKey) {
+          if (ctrl) {
             e.preventDefault()
-            const v = usePlayerStore.getState().volume
-            usePlayerStore.getState().setVolume(Math.min(1, v + 0.1))
+            controls?.setVolume(usePlayerStore.getState().volume + 0.1)
           }
           break
         case 'ArrowDown':
-          if (e.ctrlKey || e.metaKey) {
+          if (ctrl) {
             e.preventDefault()
-            const v = usePlayerStore.getState().volume
-            usePlayerStore.getState().setVolume(Math.max(0, v - 0.1))
+            controls?.setVolume(usePlayerStore.getState().volume - 0.1)
           }
           break
         case 'KeyL':
-          if (e.ctrlKey || e.metaKey) { e.preventDefault(); setShowLyrics(p => !p) }
+          if (ctrl) { e.preventDefault(); setShowLyrics(p => !p) }
           break
         case 'KeyF':
-          if (e.ctrlKey || e.metaKey) {
+          if (ctrl) {
             e.preventDefault()
             setCurrentPage('library')
             setTimeout(() => {
-              const el = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement
-              el?.focus()
+              (document.querySelector('input[placeholder*="Search"]') as HTMLInputElement)?.focus()
             }, 200)
           }
           break
@@ -82,26 +78,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Global media key shortcuts from main process
+  // Media key shortcuts from main process
   useEffect(() => {
     const cleanups = [
-      window.electronAPI.onMediaPlayPause(() => {
-        usePlayerStore.getState().setIsPlaying(!usePlayerStore.getState().isPlaying)
-      }),
-      window.electronAPI.onMediaNext(() => usePlayerStore.getState().playNext()),
-      window.electronAPI.onMediaPrevious(() => usePlayerStore.getState().playPrev())
+      window.electronAPI.onMediaPlayPause(() => getPlayerControls()?.togglePlay()),
+      window.electronAPI.onMediaNext(() => getPlayerControls()?.playNext()),
+      window.electronAPI.onMediaPrevious(() => getPlayerControls()?.playPrev())
     ]
     return () => cleanups.forEach(fn => fn())
   }, [])
 
-  const handleCreatePlaylist = useCallback((name: string) => {
-    createPlaylist(name)
-  }, [createPlaylist])
+  const handleCreatePlaylist = useCallback((name: string) => createPlaylist(name), [createPlaylist])
 
   const renderPage = () => {
-    if (currentPage.startsWith('playlist:')) {
-      return <PlaylistPage playlistId={currentPage.split(':')[1]} />
-    }
+    if (currentPage.startsWith('playlist:')) return <PlaylistPage playlistId={currentPage.split(':')[1]} />
     switch (currentPage) {
       case 'home': return <HomePage />
       case 'library': return <LibraryPage />
@@ -115,11 +105,7 @@ export default function App() {
       <TitleBar />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-        <Sidebar
-          currentPage={currentPage}
-          onNavigate={setCurrentPage}
-          onCreatePlaylist={() => setShowCreatePlaylist(true)}
-        />
+        <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} onCreatePlaylist={() => setShowCreatePlaylist(true)} />
 
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <AnimatePresence mode="wait">
@@ -141,11 +127,7 @@ export default function App() {
 
       <PlayerBar onToggleLyrics={() => setShowLyrics(p => !p)} lyricsOpen={showLyrics} />
 
-      <CreatePlaylistDialog
-        isOpen={showCreatePlaylist}
-        onClose={() => setShowCreatePlaylist(false)}
-        onCreate={handleCreatePlaylist}
-      />
+      <CreatePlaylistDialog isOpen={showCreatePlaylist} onClose={() => setShowCreatePlaylist(false)} onCreate={handleCreatePlaylist} />
 
       <AnimatePresence>
         {showVideoPlayer && currentTrack?.format === 'video' && (

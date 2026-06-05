@@ -6,11 +6,10 @@ import type { Track } from '@shared/index'
 let audioContext: AudioContext | null = null
 let analyserNode: AnalyserNode | null = null
 let sourceNode: MediaElementAudioSourceNode | null = null
+let audioConnected = false
 
 function getOrCreateAudioContext(): AudioContext {
-  if (!audioContext) {
-    audioContext = new AudioContext()
-  }
+  if (!audioContext) audioContext = new AudioContext()
   return audioContext
 }
 
@@ -23,220 +22,243 @@ function connectAudioElement(audio: HTMLAudioElement): AnalyserNode {
     analyserNode.connect(ctx.destination)
   }
   if (!sourceNode || sourceNode.mediaElement !== audio) {
-    if (sourceNode) {
-      sourceNode.disconnect()
-    }
+    try { sourceNode?.disconnect() } catch {}
     sourceNode = ctx.createMediaElementSource(audio)
     sourceNode.connect(analyserNode)
   }
   return analyserNode
 }
 
-/**
- * Get the AnalyserNode for spectrum visualization.
- * Returns null if AudioContext hasn't been initialized yet.
- */
-export function getAnalyserNode(): AnalyserNode | null {
-  return analyserNode
-}
+export function getAnalyserNode(): AnalyserNode | null { return analyserNode }
+export function getAudioContext(): AudioContext | null { return audioContext }
 
-/**
- * Get the AudioContext (for resuming after user gesture).
- */
-export function getAudioContext(): AudioContext | null {
-  return audioContext
-}
+// Global player controls — set by usePlayer hook, usable from anywhere
+let _controls: {
+  togglePlay: () => void
+  playNext: () => void
+  playPrev: () => void
+  setVolume: (v: number) => void
+  seek: (ratio: number) => void
+} | null = null
+
+export function getPlayerControls() { return _controls }
 
 /**
  * Core audio playback hook.
- * Manages the HTMLAudioElement and syncs state with the player store.
- * Also sets up Web Audio API for spectrum visualization.
+ * Returns an imperative API — call playTrack/togglePlay to control playback.
  */
 export function usePlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioConnectedRef = useRef(false)
-  const {
-    currentTrack,
-    isPlaying,
-    volume,
-    progress,
-    repeatMode,
-    setIsPlaying,
-    setVolume,
-    setProgress,
-    setCurrentTime,
-    setDuration,
-    playNext,
-    playPrev,
-    setQueue
-  } = usePlayerStore()
 
-  // Create audio element on mount
+  // Initialize audio element once
   useEffect(() => {
     const audio = new Audio()
-    audio.preload = 'metadata'
-    audio.crossOrigin = 'anonymous'
+    audio.preload = 'auto'
     audioRef.current = audio
 
-    return () => {
-      audio.pause()
-      audio.src = ''
-      audioRef.current = null
-      audioConnectedRef.current = false
-    }
-  }, [])
-
-  // Connect to Web Audio API on first user interaction (play)
-  const ensureAudioConnected = useCallback(() => {
-    const audio = audioRef.current
-    if (!audio || audioConnectedRef.current) return
-    try {
-      connectAudioElement(audio)
-      audioConnectedRef.current = true
-    } catch (e) {
-      // May fail if already connected or context is suspended
-      console.warn('Web Audio connection failed:', e)
-    }
-  }, [])
-
-  // Load track when currentTrack changes
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio || !currentTrack) return
-
-    // Use local:// protocol for serving local files
-    audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
-    audio.load()
-
-    if (isPlaying) {
-      ensureAudioConnected()
-      // Resume AudioContext if suspended (browser autoplay policy)
-      if (audioContext?.state === 'suspended') {
-        audioContext.resume()
-      }
-      audio.play().catch(() => setIsPlaying(false))
-    }
-  }, [currentTrack?.filePath])
-
-  // Sync play/pause
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio || !currentTrack) return
-
-    if (isPlaying) {
-      ensureAudioConnected()
-      if (audioContext?.state === 'suspended') {
-        audioContext.resume()
-      }
-      audio.play().catch(() => setIsPlaying(false))
-    } else {
-      audio.pause()
-    }
-  }, [isPlaying])
-
-  // Sync volume
-  useEffect(() => {
-    const audio = audioRef.current
-    if (audio) {
-      audio.volume = volume
-    }
-  }, [volume])
-
-  // Audio event handlers
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-
+    // Wire up events
     const onTimeUpdate = () => {
       if (audio.duration && isFinite(audio.duration)) {
-        setCurrentTime(audio.currentTime)
-        setProgress(audio.currentTime / audio.duration)
+        usePlayerStore.getState().setCurrentTime(audio.currentTime)
+        usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
       }
     }
-
     const onLoadedMetadata = () => {
-      setDuration(audio.duration || 0)
+      usePlayerStore.getState().setDuration(audio.duration || 0)
     }
-
     const onEnded = () => {
+      const { repeatMode } = usePlayerStore.getState()
       if (repeatMode === 'one') {
         audio.currentTime = 0
         audio.play()
       } else {
-        playNext()
+        usePlayerStore.getState().playNext()
       }
     }
-
     const onError = () => {
-      setIsPlaying(false)
-      console.error('Audio playback error:', audio.error)
+      usePlayerStore.getState().setIsPlaying(false)
+      console.error('[usePlayer] Audio error:', audio.error?.code, audio.error?.message)
+    }
+    const onCanPlay = () => {
+      // Auto-play when track loads and isPlaying is true
+      if (usePlayerStore.getState().isPlaying) {
+        audio.play().catch(e => {
+          console.warn('[usePlayer] Auto-play blocked:', e.message)
+          usePlayerStore.getState().setIsPlaying(false)
+        })
+      }
     }
 
     audio.addEventListener('timeupdate', onTimeUpdate)
     audio.addEventListener('loadedmetadata', onLoadedMetadata)
     audio.addEventListener('ended', onEnded)
     audio.addEventListener('error', onError)
+    audio.addEventListener('canplay', onCanPlay)
 
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate)
       audio.removeEventListener('loadedmetadata', onLoadedMetadata)
       audio.removeEventListener('ended', onEnded)
       audio.removeEventListener('error', onError)
+      audio.removeEventListener('canplay', onCanPlay)
+      audio.pause()
+      audio.src = ''
+      audioRef.current = null
+      audioConnected = false
     }
-  }, [repeatMode, playNext])
+  }, [])
 
-  // Seek
-  const seek = useCallback(
-    (ratio: number) => {
-      const audio = audioRef.current
-      if (audio && audio.duration && isFinite(audio.duration)) {
-        audio.currentTime = ratio * audio.duration
-        setProgress(ratio)
-      }
-    },
-    [setProgress]
-  )
+  // Ensure Web Audio API is connected (for spectrum)
+  const ensureConnected = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio || audioConnected) return
+    try {
+      connectAudioElement(audio)
+      audioConnected = true
+      if (audioContext?.state === 'suspended') audioContext.resume()
+    } catch (e) {
+      console.warn('[usePlayer] Web Audio connect failed:', e)
+    }
+  }, [])
 
-  // Play a specific track (optionally with queue)
-  const playTrack = useCallback(
-    (track: Track, queue?: Track[]) => {
-      if (queue) {
-        const index = queue.findIndex((t) => t.id === track.id)
-        setQueue(queue, index >= 0 ? index : 0)
-      } else {
-        usePlayerStore.getState().setCurrentTrack(track)
-      }
-      setIsPlaying(true)
-    },
-    [setQueue, setIsPlaying]
-  )
+  // playTrack: load a new track and start playing
+  const playTrack = useCallback((track: Track, queue?: Track[]) => {
+    const audio = audioRef.current
+    if (!audio) return
 
-  // Toggle play/pause
+    // Set queue if provided
+    if (queue) {
+      const index = queue.findIndex(t => t.id === track.id)
+      usePlayerStore.getState().setQueue(queue, index >= 0 ? index : 0)
+    } else {
+      usePlayerStore.getState().setCurrentTrack(track)
+    }
+
+    // Load and play
+    const fileUrl = `local://${encodeURIComponent(track.filePath)}`
+    audio.src = fileUrl
+    audio.load()
+    usePlayerStore.getState().setIsPlaying(true)
+
+    ensureConnected()
+
+    // Attempt play — may need user gesture on first interaction
+    const playPromise = audio.play()
+    if (playPromise) {
+      playPromise.catch(e => {
+        console.warn('[usePlayer] play() failed, will try on canplay:', e.message)
+        // Don't set isPlaying false here — let canplay handler retry
+      })
+    }
+  }, [ensureConnected])
+
+  // togglePlay: pause/resume current track
   const togglePlay = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    const { currentTrack, isPlaying } = usePlayerStore.getState()
     if (!currentTrack) return
-    setIsPlaying(!isPlaying)
-  }, [currentTrack, isPlaying, setIsPlaying])
+
+    ensureConnected()
+
+    if (isPlaying) {
+      audio.pause()
+      usePlayerStore.getState().setIsPlaying(false)
+    } else {
+      if (audioContext?.state === 'suspended') audioContext.resume()
+      audio.play().then(() => {
+        usePlayerStore.getState().setIsPlaying(true)
+      }).catch(e => {
+        console.warn('[usePlayer] Resume failed:', e.message)
+      })
+    }
+  }, [ensureConnected])
+
+  // seek: jump to a position (0-1 ratio)
+  const seek = useCallback((ratio: number) => {
+    const audio = audioRef.current
+    if (!audio || !audio.duration || !isFinite(audio.duration)) return
+    audio.currentTime = ratio * audio.duration
+    usePlayerStore.getState().setCurrentTime(audio.currentTime)
+    usePlayerStore.getState().setProgress(ratio)
+  }, [])
+
+  // seekToTime: jump to specific seconds
+  const seekToTime = useCallback((seconds: number) => {
+    const audio = audioRef.current
+    if (!audio || !audio.duration || !isFinite(audio.duration)) return
+    audio.currentTime = Math.max(0, Math.min(seconds, audio.duration))
+  }, [])
+
+  // setVolume
+  const setVolume = useCallback((vol: number) => {
+    const v = Math.max(0, Math.min(1, vol))
+    usePlayerStore.getState().setVolume(v)
+    if (audioRef.current) audioRef.current.volume = v
+  }, [])
+
+  // Sync volume from store to audio element
+  useEffect(() => {
+    const unsub = usePlayerStore.subscribe(
+      state => { if (audioRef.current) audioRef.current.volume = state.volume }
+    )
+    // Set initial volume
+    if (audioRef.current) audioRef.current.volume = usePlayerStore.getState().volume
+    return unsub
+  }, [])
+
+  // playNext / playPrev — load the new track from the store
+  const playNextTrack = useCallback(() => {
+    usePlayerStore.getState().playNext()
+    // The next track is now currentTrack — load it
+    requestAnimationFrame(() => {
+      const { currentTrack, isPlaying } = usePlayerStore.getState()
+      const audio = audioRef.current
+      if (!audio || !currentTrack) return
+      audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
+      audio.load()
+      if (isPlaying) {
+        ensureConnected()
+        audio.play().catch(() => {})
+      }
+    })
+  }, [ensureConnected])
+
+  const playPrevTrack = useCallback(() => {
+    const audio = audioRef.current
+    // If more than 3s in, restart
+    if (audio && audio.currentTime > 3) {
+      audio.currentTime = 0
+      return
+    }
+    usePlayerStore.getState().playPrev()
+    requestAnimationFrame(() => {
+      const { currentTrack, isPlaying } = usePlayerStore.getState()
+      const audio = audioRef.current
+      if (!audio || !currentTrack) return
+      audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
+      audio.load()
+      if (isPlaying) {
+        ensureConnected()
+        audio.play().catch(() => {})
+      }
+    })
+  }, [ensureConnected])
+
+  // Register global controls
+  useEffect(() => {
+    _controls = { togglePlay, playNext: playNextTrack, playPrev: playPrevTrack, setVolume, seek }
+    return () => { _controls = null }
+  }, [togglePlay, playNextTrack, playPrevTrack, setVolume, seek])
 
   return {
-    currentTrack,
-    isPlaying,
-    volume,
-    progress,
-    currentTime: usePlayerStore((s) => s.currentTime),
-    duration: usePlayerStore((s) => s.duration),
-    repeatMode: usePlayerStore((s) => s.repeatMode),
-    isShuffle: usePlayerStore((s) => s.isShuffle),
-    queue: usePlayerStore((s) => s.queue),
-
-    togglePlay,
     playTrack,
-    playNext,
-    playPrev,
+    togglePlay,
     seek,
+    seekToTime,
     setVolume,
-    toggleRepeat: usePlayerStore((s) => s.toggleRepeat),
-    toggleShuffle: usePlayerStore((s) => s.toggleShuffle),
-    /** Expose audio element ref for external use (e.g. lyrics sync) */
+    playNext: playNextTrack,
+    playPrev: playPrevTrack,
     audioRef
   }
 }
