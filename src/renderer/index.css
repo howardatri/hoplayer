@@ -96,10 +96,8 @@ input[type='range']:hover::-webkit-slider-thumb {
   opacity: 1;
 }
 
-/* Transition utilities */
-.transition-gpu {
-  transition-property: transform, opacity;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 200ms;
-  will-change: transform, opacity;
+/* Spin animation for loading spinners */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

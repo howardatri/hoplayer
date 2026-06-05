@@ -1,12 +1,5 @@
 import { motion } from 'framer-motion'
-import {
-  Home,
-  Library as LibraryIcon,
-  ListMusic,
-  Plus,
-  Settings,
-  Search
-} from 'lucide-react'
+import { Home, Library as LibraryIcon, ListMusic, Plus, Settings, Search } from 'lucide-react'
 import usePlaylistStore from '@/store/playlistStore'
 import useSearchStore from '@/store/searchStore'
 import type { Playlist } from '@shared/index'
@@ -17,11 +10,7 @@ interface SidebarProps {
   onCreatePlaylist: () => void
 }
 
-export default function Sidebar({
-  currentPage,
-  onNavigate,
-  onCreatePlaylist
-}: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, onCreatePlaylist }: SidebarProps) {
   const playlists = usePlaylistStore((s) => s.playlists)
   const searchQuery = useSearchStore((s) => s.query)
   const setSearchQuery = useSearchStore((s) => s.setQuery)
@@ -33,64 +22,86 @@ export default function Sidebar({
 
   const handleSearch = (value: string) => {
     setSearchQuery(value)
-    if (value.trim()) {
-      onNavigate('library')
-    }
+    if (value.trim()) onNavigate('library')
   }
 
   return (
-    <div className="w-56 h-full flex flex-col bg-black/20 border-r border-white/5">
-      {/* Global search */}
-      <div className="px-3 pt-3 pb-1">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
+    <div style={{
+      width: 224,
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      background: 'rgba(0,0,0,0.2)',
+      borderRight: '1px solid rgba(255,255,255,0.05)',
+      flexShrink: 0
+    }}>
+      {/* Search */}
+      <div style={{ padding: '12px 12px 4px' }}>
+        <div style={{ position: 'relative' }}>
+          <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: 'rgba(255,255,255,0.25)' }} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search..."
-            className="w-full pl-8 pr-3 py-1.5 bg-white/5 border border-white/5 rounded-lg text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-primary/30 transition-colors"
+            style={{
+              width: '100%',
+              padding: '6px 12px 6px 32px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.05)',
+              borderRadius: 8,
+              fontSize: 12,
+              color: 'white',
+              outline: 'none'
+            }}
           />
         </div>
       </div>
 
-      {/* Main navigation */}
-      <div className="px-3 pt-2 pb-2">
+      {/* Nav */}
+      <div style={{ padding: '8px 12px' }}>
         {navItems.map(({ id, label, icon: Icon }) => (
-          <motion.button
+          <button
             key={id}
-            whileHover={{ x: 2 }}
-            whileTap={{ scale: 0.98 }}
             onClick={() => onNavigate(id)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-              currentPage === id
-                ? 'bg-white/10 text-white'
-                : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-            }`}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '8px 12px',
+              borderRadius: 8,
+              fontSize: 14,
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'background 0.15s',
+              background: currentPage === id ? 'rgba(255,255,255,0.1)' : 'transparent',
+              color: currentPage === id ? 'white' : 'rgba(255,255,255,0.5)'
+            }}
+            onMouseEnter={e => { if (currentPage !== id) e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={e => { if (currentPage !== id) e.currentTarget.style.background = 'transparent' }}
           >
-            <Icon className="w-4 h-4" />
+            <Icon size={16} />
             <span>{label}</span>
-          </motion.button>
+          </button>
         ))}
       </div>
 
-      {/* Playlists section */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-6 py-2">
-          <span className="text-xs font-medium text-white/30 uppercase tracking-wider">
+      {/* Playlists */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 24px' }}>
+          <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Playlists
           </span>
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={onCreatePlaylist}
-            className="text-white/30 hover:text-white/60 transition-colors"
+            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4 }}
           >
-            <Plus className="w-4 h-4" />
-          </motion.button>
+            <Plus size={16} />
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 pb-2">
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 8px' }}>
           {playlists.map((playlist) => (
             <PlaylistItem
               key={playlist.id}
@@ -99,59 +110,68 @@ export default function Sidebar({
               onClick={() => onNavigate(`playlist:${playlist.id}`)}
             />
           ))}
-
           {playlists.length === 0 && (
-            <div className="px-3 py-4 text-center">
-              <ListMusic className="w-8 h-8 mx-auto text-white/10 mb-2" />
-              <p className="text-xs text-white/20">No playlists yet</p>
+            <div style={{ padding: '16px 12px', textAlign: 'center' }}>
+              <ListMusic style={{ width: 32, height: 32, margin: '0 auto 8px', color: 'rgba(255,255,255,0.1)' }} />
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>No playlists yet</p>
             </div>
           )}
         </div>
       </div>
 
       {/* Settings */}
-      <div className="px-3 pb-4 border-t border-white/5 pt-2">
-        <motion.button
-          whileHover={{ x: 2 }}
-          whileTap={{ scale: 0.98 }}
+      <div style={{ padding: '8px 12px 16px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        <button
           onClick={() => onNavigate('settings')}
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-            currentPage === 'settings'
-              ? 'bg-white/10 text-white'
-              : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-          }`}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '8px 12px',
+            borderRadius: 8,
+            fontSize: 14,
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'background 0.15s',
+            background: currentPage === 'settings' ? 'rgba(255,255,255,0.1)' : 'transparent',
+            color: currentPage === 'settings' ? 'white' : 'rgba(255,255,255,0.5)'
+          }}
+          onMouseEnter={e => { if (currentPage !== 'settings') e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+          onMouseLeave={e => { if (currentPage !== 'settings') e.currentTarget.style.background = 'transparent' }}
         >
-          <Settings className="w-4 h-4" />
+          <Settings size={16} />
           <span>Settings</span>
-        </motion.button>
+        </button>
       </div>
     </div>
   )
 }
 
-function PlaylistItem({
-  playlist,
-  isActive,
-  onClick
-}: {
-  playlist: Playlist
-  isActive: boolean
-  onClick: () => void
-}) {
+function PlaylistItem({ playlist, isActive, onClick }: { playlist: Playlist; isActive: boolean; onClick: () => void }) {
   return (
-    <motion.button
-      whileHover={{ x: 2 }}
-      whileTap={{ scale: 0.98 }}
+    <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-        isActive
-          ? 'bg-white/10 text-white'
-          : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-      }`}
+      style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '6px 12px',
+        borderRadius: 8,
+        fontSize: 14,
+        border: 'none',
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+        background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+        color: isActive ? 'white' : 'rgba(255,255,255,0.4)'
+      }}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
     >
-      <ListMusic className="w-3.5 h-3.5 flex-shrink-0" />
-      <span className="truncate">{playlist.name}</span>
-      <span className="text-xs text-white/20 ml-auto">{playlist.trackIds.length}</span>
-    </motion.button>
+      <ListMusic size={14} style={{ flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>{playlist.name}</span>
+      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>{playlist.trackIds.length}</span>
+    </button>
   )
 }
