@@ -191,19 +191,43 @@ export function usePlayer() {
   }, [])
 
   const seek = useCallback((ratio: number) => {
+    const { currentTrack } = usePlayerStore.getState()
+    if (!currentTrack) return
     if (!audio.duration || !isFinite(audio.duration)) return
 
     _isSeeking = true
-
     const newTime = ratio * audio.duration
-    audio.currentTime = newTime
 
     // Update store for instant UI feedback
     usePlayerStore.getState().setCurrentTime(newTime)
     usePlayerStore.getState().setProgress(ratio)
 
-    // Safety timeout in case seeked never fires
-    setTimeout(() => { _isSeeking = false }, 3000)
+    // Try direct seek first
+    audio.currentTime = newTime
+
+    // Verify after a tick — if it didn't stick, reload and retry
+    setTimeout(() => {
+      if (Math.abs(audio.currentTime - newTime) > 1) {
+        // Seek failed — reload audio and seek when ready
+        const wasPlaying = usePlayerStore.getState().isPlaying
+        audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
+        audio.load()
+
+        const onReady = () => {
+          audio.removeEventListener('canplay', onReady)
+          audio.currentTime = newTime
+          if (wasPlaying) audio.play().catch(() => {})
+          // seeked event will clear _isSeeking
+        }
+        audio.addEventListener('canplay', onReady)
+        setTimeout(() => audio.removeEventListener('canplay', onReady), 10000)
+      } else {
+        // Seek worked — seeked event will clear _isSeeking
+      }
+    }, 100)
+
+    // Safety timeout
+    setTimeout(() => { _isSeeking = false }, 5000)
   }, [])
 
   const setVolume = useCallback((vol: number) => {

@@ -160,18 +160,27 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
   // Register custom protocol for serving local audio/video files
-  protocol.handle('local', (request) => {
+  protocol.handle('local', async (request) => {
     const url = request.url
-    // local://C%3A/Users/... or local://C%3A%5CUsers%5C...
     let filePath = decodeURIComponent(url.slice('local://'.length))
-
-    // Normalize Windows paths: ensure forward slashes
     filePath = filePath.replace(/\\/g, '/')
-
-    // On Windows, file URL needs three slashes: file:///C:/path
     const fileUrl = `file:///${filePath.startsWith('/') ? filePath.slice(1) : filePath}`
 
-    return net.fetch(fileUrl)
+    // Forward the request (including Range headers) to the file
+    const response = await net.fetch(fileUrl, {
+      headers: request.headers
+    })
+
+    // Ensure response has headers needed for media seeking
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: {
+        ...Object.fromEntries(response.headers.entries()),
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
   })
 
   registerIPC()
