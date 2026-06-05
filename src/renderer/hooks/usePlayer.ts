@@ -36,20 +36,25 @@ export function getAudioContext(): AudioContext | null { return audioContext }
 // ---- Load counter to ignore stale play() promises ----
 let loadId = 0
 
-// ---- Seeking guard: when true, timeupdate events are ignored ----
+// ---- Seeking guard ----
+// true = user is dragging OR audio is processing a seek
+// timeupdate is completely ignored while true
 let _isSeeking = false
-let _seekTimeout: ReturnType<typeof setTimeout> | null = null
 
+/** Call this to block timeupdate. Used by PlayerBar during drag. */
 export function setSeeking(v: boolean) {
   _isSeeking = v
-  if (v) {
-    // Safety: auto-clear after 2s in case mouseup is missed
-    if (_seekTimeout) clearTimeout(_seekTimeout)
-    _seekTimeout = setTimeout(() => { _isSeeking = false }, 2000)
-  } else {
-    if (_seekTimeout) clearTimeout(_seekTimeout)
-  }
 }
+
+// When audio confirms seek is done, clear the guard
+audio.addEventListener('seeked', () => {
+  // Update store with the confirmed position
+  if (audio.duration && isFinite(audio.duration)) {
+    usePlayerStore.getState().setCurrentTime(audio.currentTime)
+    usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
+  }
+  _isSeeking = false
+})
 
 // ---- The ONE function that loads and optionally plays ----
 function loadAndPlay(track: Track, shouldPlay: boolean) {
@@ -93,7 +98,7 @@ function loadAndPlay(track: Track, shouldPlay: boolean) {
 
 // ---- Wire up audio events ONCE ----
 audio.addEventListener('timeupdate', () => {
-  if (_isSeeking) return // Don't update while user is dragging
+  if (_isSeeking) return // completely ignore during seek
   if (audio.duration && isFinite(audio.duration)) {
     usePlayerStore.getState().setCurrentTime(audio.currentTime)
     usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
@@ -105,6 +110,7 @@ audio.addEventListener('loadedmetadata', () => {
 })
 
 audio.addEventListener('ended', () => {
+  if (_isSeeking) return // don't end while seeking
   const { repeatMode } = usePlayerStore.getState()
   if (repeatMode === 'one') {
     audio.currentTime = 0
@@ -149,7 +155,7 @@ let _controls: {
 export function getPlayerControls() { return _controls }
 
 // =============================================
-// Hook — thin wrapper
+// Hook
 // =============================================
 export function usePlayer() {
   useEffect(() => {
@@ -187,14 +193,20 @@ export function usePlayer() {
 
   const seek = useCallback((ratio: number) => {
     if (!audio.duration || !isFinite(audio.duration)) return
+
+    // Block timeupdate immediately
+    _isSeeking = true
+
     const newTime = ratio * audio.duration
     audio.currentTime = newTime
-    // Update store immediately so UI reflects the seek
+
+    // Update store for instant UI feedback
     usePlayerStore.getState().setCurrentTime(newTime)
     usePlayerStore.getState().setProgress(ratio)
-    // Brief guard so timeupdate doesn't overwrite with stale value
-    _isSeeking = true
-    setTimeout(() => { _isSeeking = false }, 200)
+
+    // _isSeeking will be cleared by the 'seeked' event listener above
+    // Safety timeout in case seeked never fires
+    setTimeout(() => { _isSeeking = false }, 3000)
   }, [])
 
   const setVolume = useCallback((vol: number) => {
