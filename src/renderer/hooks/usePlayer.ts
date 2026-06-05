@@ -191,43 +191,38 @@ export function usePlayer() {
   }, [])
 
   const seek = useCallback((ratio: number) => {
-    const { currentTrack } = usePlayerStore.getState()
+    const { currentTrack, isPlaying, duration: dur } = usePlayerStore.getState()
     if (!currentTrack) return
-    if (!audio.duration || !isFinite(audio.duration)) return
+
+    // If we have a valid duration, calculate target time. Otherwise use ratio * 0.
+    const duration = (dur && isFinite(dur)) ? dur : (audio.duration && isFinite(audio.duration)) ? audio.duration : 0
+    if (duration <= 0) return
 
     _isSeeking = true
-    const newTime = ratio * audio.duration
+    const newTime = ratio * duration
 
     // Update store for instant UI feedback
     usePlayerStore.getState().setCurrentTime(newTime)
     usePlayerStore.getState().setProgress(ratio)
 
-    // Try direct seek first
-    audio.currentTime = newTime
+    // Reload audio and seek on metadata loaded — most reliable approach
+    audio.pause()
+    audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
+    audio.load()
 
-    // Verify after a tick — if it didn't stick, reload and retry
-    setTimeout(() => {
-      if (Math.abs(audio.currentTime - newTime) > 1) {
-        // Seek failed — reload audio and seek when ready
-        const wasPlaying = usePlayerStore.getState().isPlaying
-        audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
-        audio.load()
-
-        const onReady = () => {
-          audio.removeEventListener('canplay', onReady)
-          audio.currentTime = newTime
-          if (wasPlaying) audio.play().catch(() => {})
-          // seeked event will clear _isSeeking
-        }
-        audio.addEventListener('canplay', onReady)
-        setTimeout(() => audio.removeEventListener('canplay', onReady), 10000)
-      } else {
-        // Seek worked — seeked event will clear _isSeeking
+    const onMeta = () => {
+      audio.removeEventListener('loadedmetadata', onMeta)
+      audio.currentTime = newTime
+      // seeked event will clear _isSeeking
+      if (isPlaying) {
+        audio.play().catch(() => {})
       }
-    }, 100)
-
-    // Safety timeout
-    setTimeout(() => { _isSeeking = false }, 5000)
+    }
+    audio.addEventListener('loadedmetadata', onMeta)
+    // Safety: remove listener after 10s
+    setTimeout(() => audio.removeEventListener('loadedmetadata', onMeta), 10000)
+    // Safety: clear seeking flag
+    setTimeout(() => { _isSeeking = false }, 10000)
   }, [])
 
   const setVolume = useCallback((vol: number) => {
