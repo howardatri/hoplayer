@@ -7,6 +7,7 @@ const electronAPI: ElectronAPI = {
   getFileCover: (filePath: string) => ipcRenderer.invoke('get-file-cover', filePath),
   readFileMetadata: (filePath: string) => ipcRenderer.invoke('read-file-metadata', filePath),
   readLrcFile: (filePath: string) => ipcRenderer.invoke('read-lrc-file', filePath),
+  readFileAsUrl: (filePath: string) => ipcRenderer.invoke('read-file-as-url', filePath),
 
   // Directory dialog
   openDirectoryDialog: () => ipcRenderer.invoke('open-directory-dialog'),

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net, globalShortcut } from 'electron'
-import { join } from 'path'
+import { join, extname } from 'path'
+import { readFile } from 'fs/promises'
 import { scanDirectory, getFileCover, readFileMetadata, readLrcFile } from './ipc/fileScan'
 import Store from 'electron-store'
 
@@ -85,6 +86,26 @@ function registerIPC(): void {
 
   ipcMain.handle('read-lrc-file', async (_event, filePath: string) => {
     return readLrcFile(filePath)
+  })
+
+  // Read audio/video file as base64 for blob URL playback (seek support)
+  ipcMain.handle('read-file-as-url', async (_event, filePath: string) => {
+    try {
+      const buffer = await readFile(filePath)
+      const ext = extname(filePath).toLowerCase()
+      const mimeMap: Record<string, string> = {
+        '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+        '.wma': 'audio/x-ms-wma', '.mp4': 'video/mp4', '.webm': 'video/webm',
+        '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo'
+      }
+      const mime = mimeMap[ext] || 'application/octet-stream'
+      const base64 = buffer.toString('base64')
+      return `data:${mime};base64,${base64}`
+    } catch (e) {
+      console.error('[IPC] read-file-as-url failed:', e)
+      return null
+    }
   })
 
   // Window controls

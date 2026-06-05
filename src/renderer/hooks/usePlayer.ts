@@ -33,36 +33,21 @@ function ensureWebAudio() {
 export function getAnalyserNode(): AnalyserNode | null { return analyserNode }
 export function getAudioContext(): AudioContext | null { return audioContext }
 
-// ---- Load counter to ignore stale play() promises ----
+// ---- Load counter to ignore stale operations ----
 let loadId = 0
 
 // ---- Seeking guard ----
-// true = user is dragging OR audio is processing a seek
-// timeupdate is completely ignored while true
 let _isSeeking = false
+export function setSeeking(v: boolean) { _isSeeking = v }
 
-/** Call this to block timeupdate. Used by PlayerBar during drag. */
-export function setSeeking(v: boolean) {
-  _isSeeking = v
-}
+// Cache data URLs to avoid re-reading files from disk
+const urlCache = new Map<string, string>()
 
-// When audio confirms seek is done, clear the guard
-audio.addEventListener('seeked', () => {
-  if (audio.duration && isFinite(audio.duration)) {
-    usePlayerStore.getState().setCurrentTime(audio.currentTime)
-    usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
-  }
-  _isSeeking = false
-})
-
-// ---- The ONE function that loads and optionally plays ----
-function loadAndPlay(track: Track, shouldPlay: boolean) {
+// ---- Load and play a track ----
+async function loadAndPlay(track: Track, shouldPlay: boolean) {
   const myLoad = ++loadId
 
   audio.pause()
-  audio.src = `local://${encodeURIComponent(track.filePath)}`
-  audio.load()
-
   usePlayerStore.getState().setCurrentTrack(track)
 
   if (!shouldPlay) {
@@ -74,7 +59,26 @@ function loadAndPlay(track: Track, shouldPlay: boolean) {
   ensureWebAudio()
   if (audioContext?.state === 'suspended') audioContext.resume()
 
-  const tryPlay = () => {
+  // Get data URL (cached or read from disk)
+  let dataUrl = urlCache.get(track.filePath)
+  if (!dataUrl) {
+    const result = await window.electronAPI.readFileAsUrl(track.filePath)
+    if (!result) {
+      console.error('[loadAndPlay] Failed to read file:', track.filePath)
+      usePlayerStore.getState().setIsPlaying(false)
+      return
+    }
+    dataUrl = result
+    urlCache.set(track.filePath, dataUrl)
+  }
+
+  if (myLoad !== loadId) return // superseded
+
+  audio.src = dataUrl
+  audio.load()
+
+  const onCanPlay = () => {
+    audio.removeEventListener('canplay', onCanPlay)
     if (myLoad !== loadId) return
     audio.play().then(() => {
       if (myLoad === loadId) usePlayerStore.getState().setIsPlaying(true)
@@ -87,17 +91,16 @@ function loadAndPlay(track: Track, shouldPlay: boolean) {
   }
 
   if (audio.readyState >= 3) {
-    tryPlay()
+    onCanPlay()
   } else {
-    const onCanPlay = () => { audio.removeEventListener('canplay', onCanPlay); tryPlay() }
     audio.addEventListener('canplay', onCanPlay)
-    setTimeout(() => audio.removeEventListener('canplay', onCanPlay), 10000)
+    setTimeout(() => audio.removeEventListener('canplay', onCanPlay), 15000)
   }
 }
 
 // ---- Wire up audio events ONCE ----
 audio.addEventListener('timeupdate', () => {
-  if (_isSeeking) return // completely ignore during seek
+  if (_isSeeking) return
   if (audio.duration && isFinite(audio.duration)) {
     usePlayerStore.getState().setCurrentTime(audio.currentTime)
     usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
@@ -108,8 +111,16 @@ audio.addEventListener('loadedmetadata', () => {
   usePlayerStore.getState().setDuration(audio.duration || 0)
 })
 
+audio.addEventListener('seeked', () => {
+  if (audio.duration && isFinite(audio.duration)) {
+    usePlayerStore.getState().setCurrentTime(audio.currentTime)
+    usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
+  }
+  _isSeeking = false
+})
+
 audio.addEventListener('ended', () => {
-  if (_isSeeking) return // don't end while seeking
+  if (_isSeeking) return
   const { repeatMode } = usePlayerStore.getState()
   if (repeatMode === 'one') {
     audio.currentTime = 0
@@ -181,48 +192,34 @@ export function usePlayer() {
     } else {
       ensureWebAudio()
       if (audioContext?.state === 'suspended') audioContext.resume()
-      if (audio.readyState >= 2 && audio.src) {
+      // If audio has a source loaded, just resume
+      if (audio.src && audio.readyState >= 2) {
         audio.play().then(() => usePlayerStore.getState().setIsPlaying(true))
           .catch(e => console.warn('[audio] resume failed:', e.message))
       } else {
+        // Need to reload
         loadAndPlay(currentTrack, true)
       }
     }
   }, [])
 
   const seek = useCallback((ratio: number) => {
-    const { currentTrack, isPlaying, duration: dur } = usePlayerStore.getState()
-    if (!currentTrack) return
-
-    // If we have a valid duration, calculate target time. Otherwise use ratio * 0.
-    const duration = (dur && isFinite(dur)) ? dur : (audio.duration && isFinite(audio.duration)) ? audio.duration : 0
-    if (duration <= 0) return
+    const dur = audio.duration
+    if (!dur || !isFinite(dur)) return
 
     _isSeeking = true
-    const newTime = ratio * duration
+    const newTime = ratio * dur
+
+    // Set currentTime — works because audio is loaded via data URL (fully in memory)
+    audio.currentTime = newTime
 
     // Update store for instant UI feedback
     usePlayerStore.getState().setCurrentTime(newTime)
     usePlayerStore.getState().setProgress(ratio)
 
-    // Reload audio and seek on metadata loaded — most reliable approach
-    audio.pause()
-    audio.src = `local://${encodeURIComponent(currentTrack.filePath)}`
-    audio.load()
-
-    const onMeta = () => {
-      audio.removeEventListener('loadedmetadata', onMeta)
-      audio.currentTime = newTime
-      // seeked event will clear _isSeeking
-      if (isPlaying) {
-        audio.play().catch(() => {})
-      }
-    }
-    audio.addEventListener('loadedmetadata', onMeta)
-    // Safety: remove listener after 10s
-    setTimeout(() => audio.removeEventListener('loadedmetadata', onMeta), 10000)
-    // Safety: clear seeking flag
-    setTimeout(() => { _isSeeking = false }, 10000)
+    // seeked event will clear _isSeeking
+    // Safety timeout
+    setTimeout(() => { _isSeeking = false }, 5000)
   }, [])
 
   const setVolume = useCallback((vol: number) => {

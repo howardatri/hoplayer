@@ -73,6 +73,7 @@ export interface ElectronAPI {
   getFileCover: (filePath: string) => Promise<string | null>
   readFileMetadata: (filePath: string) => Promise<Partial<Track> | null>
   readLrcFile: (filePath: string) => Promise<string | null>
+  readFileAsUrl: (filePath: string) => Promise<string | null>
   openDirectoryDialog: () => Promise<string | null>
   minimizeWindow: () => void
   maximizeWindow: () => void
