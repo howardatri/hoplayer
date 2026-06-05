@@ -83,12 +83,12 @@ Electron 内存优化是本项目的硬性要求：
 - [x] 迷你播放器模式
 
 ### 二期（体验增强）
-- [ ] 音频频谱/波形可视化（Canvas 2D）
-- [ ] 从封面图提取主色调，动态主题
-- [ ] 全局快捷键（播放/暂停、切歌）
-- [ ] 歌词显示（支持 .lrc 文件）
-- [ ] 拖拽排序播放列表
-- [ ] 搜索（按标题、艺术家、专辑）
+- [x] 音频频谱/波形可视化（Canvas 2D）
+- [x] 从封面图提取主色调，动态主题
+- [x] 全局快捷键（播放/暂停、切歌）
+- [x] 歌词显示（支持 .lrc 文件）
+- [x] 拖拽排序播放列表
+- [x] 搜索（按标题、艺术家、专辑）
 
 ### 三期（创意交互）
 - [ ] 手势控制：在播放器区域滑动调节音量/进度
@@ -106,3 +106,10 @@ Electron 内存优化是本项目的硬性要求：
 - 本地文件通过自定义 `local://` 协议加载，主进程用 `protocol.handle` 将其转为 `file://` 路径
 - 使用 `@electron-toolkit/utils` 的 `is` 工具判断开发/生产环境
 - 使用 `electron-store` 持久化用户数据（扫描路径、播放列表、曲库）
+- Web Audio API 的 `AnalyserNode` 通过单例模式管理，`usePlayer` hook 负责初始化并连接 `HTMLAudioElement`
+- 音频频谱支持三种渲染模式：bars、wave、circular，均使用 Canvas 2D
+- 封面主色调提取：Canvas 降采样到 64x64，过滤暗/亮像素后取加权平均，应用为 CSS 变量
+- 全局快捷键：主进程注册 `MediaPlayPause`/`MediaNextTrack`/`MediaPreviousTrack`，通过 IPC 发送到渲染进程
+- 歌词解析：LRC 格式解析器支持多时间戳行和扩展标签，二分查找定位当前行
+- 拖拽排序：原生 HTML5 Drag and Drop API，无第三方依赖
+- 全局搜索：Sidebar 搜索框通过 Zustand searchStore 与 LibraryPage 同步查询

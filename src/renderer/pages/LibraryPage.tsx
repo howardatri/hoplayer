@@ -1,9 +1,8 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   Search,
   Plus,
-  ArrowUpDown,
   FolderOpen,
   Music,
   SortAsc,
@@ -11,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useLibrary } from '@/hooks/useLibrary'
 import { usePlayer } from '@/hooks/usePlayer'
+import useSearchStore from '@/store/searchStore'
 import TrackList from '@/components/TrackList'
 import type { Track } from '@shared/index'
 
@@ -20,9 +20,26 @@ type SortDirection = 'asc' | 'desc'
 export default function LibraryPage() {
   const { tracks, addDirectory, isLoading, scanPaths } = useLibrary()
   const { playTrack } = usePlayer()
-  const [searchQuery, setSearchQuery] = useState('')
+  const globalQuery = useSearchStore((s) => s.query)
+  const setGlobalQuery = useSearchStore((s) => s.setQuery)
+  const [searchQuery, setSearchQuery] = useState(globalQuery)
   const [sortField, setSortField] = useState<SortField>('title')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+
+  // Sync with global search query from sidebar
+  useEffect(() => {
+    if (globalQuery && globalQuery !== searchQuery) {
+      setSearchQuery(globalQuery)
+    }
+  }, [globalQuery])
+
+  // Clear global query when local search is cleared
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    if (!value.trim()) {
+      setGlobalQuery('')
+    }
+  }
 
   // Filter and sort tracks
   const filteredTracks = useMemo(() => {
@@ -107,7 +124,7 @@ export default function LibraryPage() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Search by title, artist, or album..."
               className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
             />

@@ -6,6 +6,7 @@ const electronAPI: ElectronAPI = {
   scanDirectory: (dirPath: string) => ipcRenderer.invoke('scan-directory', dirPath),
   getFileCover: (filePath: string) => ipcRenderer.invoke('get-file-cover', filePath),
   readFileMetadata: (filePath: string) => ipcRenderer.invoke('read-file-metadata', filePath),
+  readLrcFile: (filePath: string) => ipcRenderer.invoke('read-lrc-file', filePath),
 
   // Directory dialog
   openDirectoryDialog: () => ipcRenderer.invoke('open-directory-dialog'),
@@ -29,6 +30,26 @@ const electronAPI: ElectronAPI = {
     return () => {
       ipcRenderer.removeListener('file-dropped', handler)
     }
+  },
+  onMediaPlayPause: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('media-play-pause', handler)
+    return () => { ipcRenderer.removeListener('media-play-pause', handler) }
+  },
+  onMediaNext: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('media-next', handler)
+    return () => { ipcRenderer.removeListener('media-next', handler) }
+  },
+  onMediaPrevious: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('media-previous', handler)
+    return () => { ipcRenderer.removeListener('media-previous', handler) }
+  },
+  onMediaStop: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('media-stop', handler)
+    return () => { ipcRenderer.removeListener('media-stop', handler) }
   }
 }
 

@@ -1,7 +1,7 @@
-import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net, globalShortcut } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { scanDirectory, getFileCover, readFileMetadata } from './ipc/fileScan'
+import { scanDirectory, getFileCover, readFileMetadata, readLrcFile } from './ipc/fileScan'
 import Store from 'electron-store'
 
 // Memory optimization
@@ -72,6 +72,10 @@ function registerIPC(): void {
     return readFileMetadata(filePath)
   })
 
+  ipcMain.handle('read-lrc-file', async (_event, filePath: string) => {
+    return readLrcFile(filePath)
+  })
+
   // Window controls
   ipcMain.on('minimize-window', () => {
     mainWindow?.minimize()
@@ -131,6 +135,7 @@ app.whenReady().then(() => {
 
   registerIPC()
   createWindow()
+  registerGlobalShortcuts()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -144,3 +149,24 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
+// Register global media shortcuts
+function registerGlobalShortcuts(): void {
+  const shortcuts: [string, string][] = [
+    ['MediaPlayPause', 'media-play-pause'],
+    ['MediaNextTrack', 'media-next'],
+    ['MediaPreviousTrack', 'media-previous'],
+    ['MediaStop', 'media-stop']
+  ]
+
+  for (const [key, channel] of shortcuts) {
+    try {
+      globalShortcut.register(key, () => {
+        mainWindow?.webContents.send(channel)
+      })
+    } catch {
+      // Shortcut may not be available on this platform
+      console.warn(`Failed to register global shortcut: ${key}`)
+    }
+  }
+}

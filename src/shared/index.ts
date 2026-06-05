@@ -60,6 +60,9 @@ export const IPC_CHANNELS = {
   // Dialogs
   OPEN_DIRECTORY_DIALOG: 'open-directory-dialog',
 
+  // Lyrics
+  READ_LRC_FILE: 'read-lrc-file',
+
   // Events (main -> renderer)
   FILE_DROPPED: 'file-dropped'
 } as const
@@ -69,6 +72,7 @@ export interface ElectronAPI {
   scanDirectory: (dirPath: string) => Promise<ScanResult>
   getFileCover: (filePath: string) => Promise<string | null>
   readFileMetadata: (filePath: string) => Promise<Partial<Track> | null>
+  readLrcFile: (filePath: string) => Promise<string | null>
   openDirectoryDialog: () => Promise<string | null>
   minimizeWindow: () => void
   maximizeWindow: () => void
@@ -77,6 +81,10 @@ export interface ElectronAPI {
   storeGet: <T>(key: string, defaultValue: T) => Promise<T>
   storeSet: <T>(key: string, value: T) => Promise<void>
   onFileDropped: (callback: (filePaths: string[]) => void) => () => void
+  onMediaPlayPause: (callback: () => void) => () => void
+  onMediaNext: (callback: () => void) => () => void
+  onMediaPrevious: (callback: () => void) => () => void
+  onMediaStop: (callback: () => void) => () => void
 }
 
 declare global {

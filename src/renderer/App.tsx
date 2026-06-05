@@ -4,6 +4,7 @@ import TitleBar from '@/components/TitleBar'
 import Sidebar from '@/components/Sidebar'
 import PlayerBar from '@/components/PlayerBar'
 import CreatePlaylistDialog from '@/components/CreatePlaylistDialog'
+import LyricsPanel from '@/components/LyricsPanel'
 import HomePage from '@/pages/HomePage'
 import LibraryPage from '@/pages/LibraryPage'
 import PlaylistPage from '@/pages/PlaylistPage'
@@ -11,13 +12,18 @@ import VideoPlayer from '@/pages/VideoPlayer'
 import usePlaylistStore from '@/store/playlistStore'
 import usePlayerStore from '@/store/playerStore'
 import { usePlayer } from '@/hooks/usePlayer'
+import { useThemeColor } from '@/hooks/useThemeColor'
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home')
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false)
+  const [showLyrics, setShowLyrics] = useState(false)
   const createPlaylist = usePlaylistStore((s) => s.createPlaylist)
   const currentTrack = usePlayerStore((s) => s.currentTrack)
   const [showVideoPlayer, setShowVideoPlayer] = useState(false)
+
+  // Dynamic theming from cover art
+  useThemeColor(currentTrack?.filePath)
 
   // Show video player when a video track starts playing
   useEffect(() => {
@@ -61,11 +67,46 @@ export default function App() {
             usePlayerStore.getState().setVolume(Math.max(0, vol - 0.1))
           }
           break
+        case 'KeyL':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            setShowLyrics((prev) => !prev)
+          }
+          break
+        case 'KeyF':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            setCurrentPage('library')
+            // Focus search input after navigation
+            setTimeout(() => {
+              const searchInput = document.querySelector(
+                'input[placeholder*="Search"]'
+              ) as HTMLInputElement
+              searchInput?.focus()
+            }, 100)
+          }
+          break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Global media key shortcuts from main process
+  useEffect(() => {
+    const cleanups = [
+      window.electronAPI.onMediaPlayPause(() => {
+        usePlayerStore.getState().setIsPlaying(!usePlayerStore.getState().isPlaying)
+      }),
+      window.electronAPI.onMediaNext(() => {
+        usePlayerStore.getState().playNext()
+      }),
+      window.electronAPI.onMediaPrevious(() => {
+        usePlayerStore.getState().playPrev()
+      })
+    ]
+    return () => cleanups.forEach((fn) => fn())
   }, [])
 
   // Handle file drops
@@ -106,7 +147,7 @@ export default function App() {
       <TitleBar />
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         <Sidebar
           currentPage={currentPage}
           onNavigate={setCurrentPage}
@@ -126,10 +167,19 @@ export default function App() {
             {renderPage()}
           </motion.div>
         </AnimatePresence>
+
+        {/* Lyrics panel overlay */}
+        <LyricsPanel
+          isOpen={showLyrics}
+          onClose={() => setShowLyrics(false)}
+        />
       </div>
 
       {/* Player bar */}
-      <PlayerBar />
+      <PlayerBar
+        onToggleLyrics={() => setShowLyrics((prev) => !prev)}
+        lyricsOpen={showLyrics}
+      />
 
       {/* Create playlist dialog */}
       <CreatePlaylistDialog

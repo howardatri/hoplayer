@@ -4,7 +4,7 @@ import { Play, Trash2, Music } from 'lucide-react'
 import usePlaylistStore from '@/store/playlistStore'
 import useLibraryStore from '@/store/libraryStore'
 import { usePlayer } from '@/hooks/usePlayer'
-import TrackList from '@/components/TrackList'
+import DraggableTrackList from '@/components/DraggableTrackList'
 import type { Track } from '@shared/index'
 
 interface PlaylistPageProps {
@@ -15,6 +15,7 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
   const playlist = usePlaylistStore((s) => s.getPlaylistById(playlistId))
   const deletePlaylist = usePlaylistStore((s) => s.deletePlaylist)
   const removeTrackFromPlaylist = usePlaylistStore((s) => s.removeTrackFromPlaylist)
+  const reorderPlaylist = usePlaylistStore((s) => s.reorderPlaylist)
   const tracks = useLibraryStore((s) => s.tracks)
   const { playTrack } = usePlayer()
 
@@ -37,6 +38,23 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
       playTrack(playlistTracks[0], playlistTracks)
     }
   }
+
+  const handleReorder = useCallback(
+    (newOrder: Track[]) => {
+      reorderPlaylist(playlistId, newOrder.map((t) => t.id))
+    },
+    [playlistId, reorderPlaylist]
+  )
+
+  const handleRemoveTrack = useCallback(
+    (index: number) => {
+      const track = playlistTracks[index]
+      if (track) {
+        removeTrackFromPlaylist(playlistId, track.id)
+      }
+    },
+    [playlistId, playlistTracks, removeTrackFromPlaylist]
+  )
 
   if (!playlist) {
     return (
@@ -93,8 +111,8 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
         </div>
       </div>
 
-      {/* Track list */}
-      <div className="flex-1 overflow-hidden">
+      {/* Track list with drag-to-reorder */}
+      <div className="flex-1 overflow-y-auto px-4">
         {playlistTracks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-white/30">
             <Music className="w-12 h-12 mb-3 opacity-30" />
@@ -104,10 +122,11 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
             </p>
           </div>
         ) : (
-          <TrackList
+          <DraggableTrackList
             tracks={playlistTracks}
+            onReorder={handleReorder}
             onPlayTrack={handlePlayTrack}
-            height={500}
+            onRemoveTrack={handleRemoveTrack}
           />
         )}
       </div>

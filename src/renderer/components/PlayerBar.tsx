@@ -12,10 +12,16 @@ import {
   VolumeX,
   Volume1,
   ListMusic,
-  Maximize2
+  Mic2
 } from 'lucide-react'
 import CoverArt from './CoverArt'
+import AudioSpectrum from './AudioSpectrum'
 import { usePlayer } from '@/hooks/usePlayer'
+
+interface PlayerBarProps {
+  onToggleLyrics?: () => void
+  lyricsOpen?: boolean
+}
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '0:00'
@@ -24,7 +30,7 @@ function formatTime(seconds: number): string {
   return `${min}:${sec.toString().padStart(2, '0')}`
 }
 
-export default function PlayerBar() {
+export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps) {
   const {
     currentTrack,
     isPlaying,
@@ -124,7 +130,7 @@ export default function PlayerBar() {
         </div>
 
         {/* Center controls */}
-        <div className="flex-1 flex flex-col items-center gap-1">
+        <div className="flex-1 flex flex-col items-center gap-0.5">
           <div className="flex items-center gap-3">
             <motion.button
               whileHover={{ scale: 1.1 }}
@@ -180,11 +186,11 @@ export default function PlayerBar() {
             </motion.button>
           </div>
 
-          {/* Time display */}
-          <div className="flex items-center gap-2 text-xs text-white/30">
-            <span className="w-10 text-right">{formatTime(currentTime)}</span>
-            <span>/</span>
-            <span className="w-10">{formatTime(duration)}</span>
+          {/* Audio spectrum + Time display */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/30 w-10 text-right">{formatTime(currentTime)}</span>
+            <AudioSpectrum width={120} height={16} style="bars" />
+            <span className="text-xs text-white/30 w-10">{formatTime(duration)}</span>
           </div>
         </div>
 
@@ -215,6 +221,20 @@ export default function PlayerBar() {
               />
             </div>
           </div>
+
+          {/* Lyrics toggle */}
+          {onToggleLyrics && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onToggleLyrics}
+              className={`p-1.5 rounded-full transition-colors ${
+                lyricsOpen ? 'text-primary' : 'text-white/40 hover:text-white/70'
+              }`}
+            >
+              <Mic2 className="w-4 h-4" />
+            </motion.button>
+          )}
 
           {/* Queue toggle (placeholder) */}
           <motion.button

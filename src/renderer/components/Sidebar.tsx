@@ -5,9 +5,10 @@ import {
   ListMusic,
   Plus,
   Settings,
-  FolderOpen
+  Search
 } from 'lucide-react'
 import usePlaylistStore from '@/store/playlistStore'
+import useSearchStore from '@/store/searchStore'
 import type { Playlist } from '@shared/index'
 
 interface SidebarProps {
@@ -16,18 +17,45 @@ interface SidebarProps {
   onCreatePlaylist: () => void
 }
 
-export default function Sidebar({ currentPage, onNavigate, onCreatePlaylist }: SidebarProps) {
+export default function Sidebar({
+  currentPage,
+  onNavigate,
+  onCreatePlaylist
+}: SidebarProps) {
   const playlists = usePlaylistStore((s) => s.playlists)
+  const searchQuery = useSearchStore((s) => s.query)
+  const setSearchQuery = useSearchStore((s) => s.setQuery)
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'library', label: 'Library', icon: LibraryIcon }
   ]
 
+  const handleSearch = (value: string) => {
+    setSearchQuery(value)
+    if (value.trim()) {
+      onNavigate('library')
+    }
+  }
+
   return (
     <div className="w-56 h-full flex flex-col bg-black/20 border-r border-white/5">
+      {/* Global search */}
+      <div className="px-3 pt-3 pb-1">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search..."
+            className="w-full pl-8 pr-3 py-1.5 bg-white/5 border border-white/5 rounded-lg text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-primary/30 transition-colors"
+          />
+        </div>
+      </div>
+
       {/* Main navigation */}
-      <div className="px-3 pt-4 pb-2">
+      <div className="px-3 pt-2 pb-2">
         {navItems.map(({ id, label, icon: Icon }) => (
           <motion.button
             key={id}

@@ -1,4 +1,4 @@
-import { readdir, stat } from 'fs/promises'
+import { readdir, stat, readFile } from 'fs/promises'
 import { join, extname } from 'path'
 import { parseFile } from 'music-metadata'
 import { v4 as uuidv4 } from 'uuid'
@@ -109,6 +109,16 @@ export async function readFileMetadata(filePath: string): Promise<Partial<Track>
       album: common.album,
       duration: format.duration
     }
+  } catch {
+    return null
+  }
+}
+
+export async function readLrcFile(filePath: string): Promise<string | null> {
+  try {
+    await stat(filePath)
+    const content = await readFile(filePath, 'utf-8')
+    return content
   } catch {
     return null
   }
