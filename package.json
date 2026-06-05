@@ -16,7 +16,6 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^3.0.0",
     "electron-store": "^8.1.0",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.300.0",

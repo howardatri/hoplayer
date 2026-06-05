@@ -1,6 +1,5 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net, globalShortcut } from 'electron'
 import { join } from 'path'
-import { is } from '@electron-toolkit/utils'
 import { scanDirectory, getFileCover, readFileMetadata, readLrcFile } from './ipc/fileScan'
 import Store from 'electron-store'
 
@@ -8,7 +7,20 @@ import Store from 'electron-store'
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('--js-flags', '--max-old-space-size=256')
 
-const store = new Store()
+let store: InstanceType<typeof Store>
+try {
+  store = new Store()
+} catch (e) {
+  console.error('Failed to init electron-store, using fallback:', e)
+  // Fallback: in-memory store
+  const mem = new Map<string, unknown>()
+  store = {
+    get: (key: string, defaultValue?: unknown) => (mem.has(key) ? mem.get(key) : defaultValue),
+    set: (_key: string, _value: unknown) => {},
+    delete: (_key: string) => {}
+  } as unknown as InstanceType<typeof Store>
+}
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -18,12 +30,12 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 600,
     show: false,
-    frame: false, // Frameless for custom title bar
+    frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#0f0f14',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: true,
+      sandbox: false, // Need false for protocol handler to work
       spellcheck: false,
       nodeIntegration: false,
       contextIsolation: true
@@ -34,33 +46,32 @@ function createWindow(): void {
     mainWindow?.show()
   })
 
-  // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
-  // Load renderer
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  // Log renderer console messages for debugging
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    if (level >= 2) {
+      console.log(`[renderer ${level === 2 ? 'warn' : 'error'}] ${message}`)
+    }
+  })
+
+  // Use ELECTRON_RENDERER_URL in dev, file in production
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+  if (rendererUrl) {
+    mainWindow.loadURL(rendererUrl)
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
-
-  // Handle window state for mini player
-  mainWindow.on('maximize', () => {
-    mainWindow?.webContents.send('window-maximized')
-  })
-
-  mainWindow.on('unmaximize', () => {
-    mainWindow?.webContents.send('window-unmaximized')
-  })
 }
 
 // Register IPC handlers
 function registerIPC(): void {
   // File scanning
   ipcMain.handle('scan-directory', async (_event, dirPath: string) => {
+    console.log('[IPC] scan-directory:', dirPath)
     return scanDirectory(dirPath)
   })
 
@@ -104,16 +115,29 @@ function registerIPC(): void {
 
   // Store operations
   ipcMain.handle('store-get', async (_event, key: string, defaultValue: unknown) => {
-    return store.get(key, defaultValue)
+    try {
+      return store.get(key, defaultValue)
+    } catch {
+      return defaultValue
+    }
   })
 
   ipcMain.handle('store-set', async (_event, key: string, value: unknown) => {
-    store.set(key, value)
+    try {
+      store.set(key, value)
+    } catch (e) {
+      console.error('[IPC] store-set failed:', e)
+    }
   })
 
-  // Directory dialog
+  // Directory dialog — use focused window as fallback
   ipcMain.handle('open-directory-dialog', async () => {
-    const result = await dialog.showOpenDialog(mainWindow!, {
+    const win = mainWindow || BrowserWindow.getFocusedWindow()
+    if (!win) {
+      console.error('[IPC] No window available for dialog')
+      return null
+    }
+    const result = await dialog.showOpenDialog(win, {
       properties: ['openDirectory']
     })
     if (result.canceled) return null
@@ -121,16 +145,33 @@ function registerIPC(): void {
   })
 }
 
-// Custom protocol for local files
+// Custom protocol for local files — must be registered before app.ready
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'local', privileges: { bypassCSP: true, stream: true } }
+  {
+    scheme: 'local',
+    privileges: {
+      bypassCSP: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
 ])
 
 app.whenReady().then(() => {
   // Register custom protocol for serving local audio/video files
   protocol.handle('local', (request) => {
-    const filePath = decodeURIComponent(request.url.slice('local://'.length))
-    return net.fetch(`file://${filePath}`)
+    const url = request.url
+    // local://C%3A/Users/... or local://C%3A%5CUsers%5C...
+    let filePath = decodeURIComponent(url.slice('local://'.length))
+
+    // Normalize Windows paths: ensure forward slashes
+    filePath = filePath.replace(/\\/g, '/')
+
+    // On Windows, file URL needs three slashes: file:///C:/path
+    const fileUrl = `file:///${filePath.startsWith('/') ? filePath.slice(1) : filePath}`
+
+    return net.fetch(fileUrl)
   })
 
   registerIPC()
@@ -150,7 +191,6 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Register global media shortcuts
 function registerGlobalShortcuts(): void {
   const shortcuts: [string, string][] = [
     ['MediaPlayPause', 'media-play-pause'],
@@ -165,7 +205,6 @@ function registerGlobalShortcuts(): void {
         mainWindow?.webContents.send(channel)
       })
     } catch {
-      // Shortcut may not be available on this platform
       console.warn(`Failed to register global shortcut: ${key}`)
     }
   }
