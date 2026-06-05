@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect } from 'react'
+import { useRef, useCallback, useState } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Shuffle, Volume2, VolumeX, Volume1, ListMusic, Mic2 } from 'lucide-react'
 import CoverArt from './CoverArt'
 import AudioSpectrum from './AudioSpectrum'
@@ -30,70 +30,25 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
   const toggleRepeat = usePlayerStore(s => s.toggleRepeat)
   const toggleShuffle = usePlayerStore(s => s.toggleShuffle)
 
-  const progressRef = useRef<HTMLDivElement>(null)
-  const volumeRef = useRef<HTMLDivElement>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragProgress, setDragProgress] = useState(0)
+  // Use native range input for progress — most reliable drag behavior
+  const handleProgressChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const ratio = Number(e.target.value) / 100
+    seek(ratio)
+  }, [seek])
 
-  // ---- Progress bar drag-to-seek ----
-  const getProgressFromEvent = useCallback((e: MouseEvent | React.MouseEvent) => {
-    const rect = progressRef.current?.getBoundingClientRect()
-    if (!rect) return 0
-    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  const handleProgressPointerDown = useCallback(() => {
+    setSeeking(true) // block timeupdate during drag
   }, [])
 
-  const handleProgressMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const p = getProgressFromEvent(e)
-    setIsDragging(true)
-    setDragProgress(p)
-    setSeeking(true) // Block timeupdate from overwriting during drag
-  }, [getProgressFromEvent])
+  const handleProgressPointerUp = useCallback(() => {
+    // seeked event in usePlayer will clear _isSeeking
+  }, [])
 
-  useEffect(() => {
-    if (!isDragging) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault()
-      setDragProgress(getProgressFromEvent(e))
-    }
-
-    const handleMouseUp = (e: MouseEvent) => {
-      const p = getProgressFromEvent(e)
-      setIsDragging(false)
-      seek(p) // seek() sets its own _isSeeking guard for 200ms
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isDragging, getProgressFromEvent, seek])
-
-  // ---- Volume bar click ----
-  const handleVolumeClick = useCallback((e: React.MouseEvent) => {
-    const rect = volumeRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setVolume(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)))
+  // Volume
+  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setVolume(Number(e.target.value) / 100)
   }, [setVolume])
 
-  // ---- Keyboard volume gesture ----
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      // Only if hovering over the player bar area
-      const target = e.target as HTMLElement
-      if (!target.closest('[data-player-bar]')) return
-      e.preventDefault()
-      const delta = e.deltaY > 0 ? -0.05 : 0.05
-      setVolume(usePlayerStore.getState().volume + delta)
-    }
-    window.addEventListener('wheel', handleWheel, { passive: false })
-    return () => window.removeEventListener('wheel', handleWheel)
-  }, [setVolume])
-
-  const displayProgress = isDragging ? dragProgress : progress
   const VolumeIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat
 
@@ -104,6 +59,18 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
     transition: 'color 0.15s'
   })
 
+  const rangeStyle: React.CSSProperties = {
+    width: '100%',
+    height: 6,
+    WebkitAppearance: 'none',
+    appearance: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    outline: 'none',
+    margin: 0,
+    padding: 0
+  }
+
   return (
     <div data-player-bar style={{
       height: 80, flexShrink: 0,
@@ -111,34 +78,27 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
       borderTop: '1px solid rgba(255,255,255,0.06)',
       display: 'flex', flexDirection: 'column', zIndex: 50
     }}>
-      {/* Progress bar — clickable + draggable */}
-      <div
-        ref={progressRef}
-        onMouseDown={handleProgressMouseDown}
-        style={{
-          height: 6, cursor: 'pointer', position: 'relative',
-          background: 'rgba(255,255,255,0.08)',
-          transition: 'height 0.15s'
-        }}
-        onMouseEnter={e => e.currentTarget.style.height = '10px'}
-        onMouseLeave={e => { if (!isDragging) e.currentTarget.style.height = '6px' }}
-      >
-        <div style={{
-          position: 'absolute', left: 0, top: 0, height: '100%',
-          width: `${displayProgress * 100}%`,
-          background: 'var(--color-primary, #6366f1)',
-          transition: isDragging ? 'none' : 'width 0.1s linear'
-        }} />
-        {/* Thumb */}
-        <div style={{
-          position: 'absolute', top: '50%', transform: 'translate(-50%, -50%)',
-          left: `${displayProgress * 100}%`,
-          width: isDragging ? 14 : 10, height: isDragging ? 14 : 10,
-          borderRadius: '50%', background: 'white',
-          boxShadow: '0 0 6px rgba(0,0,0,0.3)',
-          opacity: isDragging ? 1 : 0, transition: 'opacity 0.15s, width 0.15s, height 0.15s',
-          pointerEvents: 'none'
-        }} />
+      {/* Progress bar — native range input */}
+      <div style={{ padding: '0 16px', height: 12, display: 'flex', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 40, textAlign: 'right', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{formatTime(currentTime)}</span>
+        <div style={{ flex: 1, margin: '0 8px', position: 'relative' }}>
+          {/* Track background */}
+          <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: 0, right: 0, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, pointerEvents: 'none' }} />
+          {/* Filled portion */}
+          <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: 0, width: `${progress * 100}%`, height: 4, background: 'var(--color-primary, #6366f1)', borderRadius: 2, pointerEvents: 'none' }} />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.1}
+            value={progress * 100}
+            onChange={handleProgressChange}
+            onPointerDown={handleProgressPointerDown}
+            onPointerUp={handleProgressPointerUp}
+            style={rangeStyle}
+          />
+        </div>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 40, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{formatTime(duration)}</span>
       </div>
 
       {/* Controls */}
@@ -159,38 +119,34 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
         </div>
 
         {/* Center */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button style={iconBtn(isShuffle)} onClick={toggleShuffle} title="Shuffle"><Shuffle size={16} /></button>
             <button style={iconBtn()} onClick={playPrev} title="Previous"><SkipBack size={20} fill="currentColor" /></button>
             <button onClick={togglePlay} title={isPlaying ? 'Pause' : 'Play'} style={{
               width: 40, height: 40, borderRadius: '50%', background: 'white', color: 'black',
-              border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'transform 0.1s'
-            }}
-              onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
-              onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-            >
+              border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
               {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" style={{ marginLeft: 2 }} />}
             </button>
             <button style={iconBtn()} onClick={playNext} title="Next"><SkipForward size={20} fill="currentColor" /></button>
             <button style={iconBtn(repeatMode !== 'off')} onClick={toggleRepeat} title={`Repeat: ${repeatMode}`}><RepeatIcon size={16} /></button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 40, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatTime(currentTime)}</span>
-            <AudioSpectrum width={120} height={16} style="bars" />
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 40, fontVariantNumeric: 'tabular-nums' }}>{formatTime(duration)}</span>
-          </div>
+          <AudioSpectrum width={120} height={16} style="bars" />
         </div>
 
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: 192, justifyContent: 'flex-end' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button style={iconBtn()} onClick={() => setVolume(volume === 0 ? 0.8 : 0)} title="Mute"><VolumeIcon size={16} /></button>
-            <div ref={volumeRef} onClick={handleVolumeClick} style={{ width: 80, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, cursor: 'pointer', position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${volume * 100}%`, background: 'rgba(255,255,255,0.6)', borderRadius: 2 }} />
-            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(volume * 100)}
+              onChange={handleVolumeChange}
+              style={{ width: 80, height: 4, WebkitAppearance: 'none', appearance: 'none', background: 'transparent', cursor: 'pointer', outline: 'none' }}
+            />
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', width: 30, fontVariantNumeric: 'tabular-nums' }}>{Math.round(volume * 100)}%</span>
           </div>
           {onToggleLyrics && (
@@ -199,6 +155,40 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen }: PlayerBarProps
           <button style={iconBtn()} title="Queue"><ListMusic size={16} /></button>
         </div>
       </div>
+
+      {/* Range input styling via CSS */}
+      <style>{`
+        [data-player-bar] input[type="range"] {
+          -webkit-appearance: none;
+          appearance: none;
+          background: transparent;
+          cursor: pointer;
+          outline: none;
+        }
+        [data-player-bar] input[type="range"]::-webkit-slider-runnable-track {
+          height: 4px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 2px;
+        }
+        [data-player-bar] input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: white;
+          margin-top: -4px;
+          box-shadow: 0 0 4px rgba(0,0,0,0.3);
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        [data-player-bar] input[type="range"]:hover::-webkit-slider-thumb {
+          opacity: 1;
+        }
+        [data-player-bar] input[type="range"]:active::-webkit-slider-thumb {
+          opacity: 1;
+        }
+      `}</style>
     </div>
   )
 }

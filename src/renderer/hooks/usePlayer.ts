@@ -48,7 +48,6 @@ export function setSeeking(v: boolean) {
 
 // When audio confirms seek is done, clear the guard
 audio.addEventListener('seeked', () => {
-  // Update store with the confirmed position
   if (audio.duration && isFinite(audio.duration)) {
     usePlayerStore.getState().setCurrentTime(audio.currentTime)
     usePlayerStore.getState().setProgress(audio.currentTime / audio.duration)
@@ -194,7 +193,6 @@ export function usePlayer() {
   const seek = useCallback((ratio: number) => {
     if (!audio.duration || !isFinite(audio.duration)) return
 
-    // Block timeupdate immediately
     _isSeeking = true
 
     const newTime = ratio * audio.duration
@@ -204,7 +202,6 @@ export function usePlayer() {
     usePlayerStore.getState().setCurrentTime(newTime)
     usePlayerStore.getState().setProgress(ratio)
 
-    // _isSeeking will be cleared by the 'seeked' event listener above
     // Safety timeout in case seeked never fires
     setTimeout(() => { _isSeeking = false }, 3000)
   }, [])
