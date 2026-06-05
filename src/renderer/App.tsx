@@ -5,6 +5,8 @@ import Sidebar from '@/components/Sidebar'
 import PlayerBar from '@/components/PlayerBar'
 import CreatePlaylistDialog from '@/components/CreatePlaylistDialog'
 import LyricsPanel from '@/components/LyricsPanel'
+import GestureHandler from '@/components/GestureHandler'
+import KeyHint from '@/components/KeyHint'
 import HomePage from '@/pages/HomePage'
 import LibraryPage from '@/pages/LibraryPage'
 import PlaylistPage from '@/pages/PlaylistPage'
@@ -118,12 +120,36 @@ export default function App() {
     return cleanup
   }, [])
 
+  // Gesture handlers
+  const handleGestureVolume = useCallback((delta: number) => {
+    const store = usePlayerStore.getState()
+    store.setVolume(Math.max(0, Math.min(1, store.volume + delta)))
+  }, [])
+
+  const handleGestureSeek = useCallback((deltaSeconds: number) => {
+    const store = usePlayerStore.getState()
+    const audio = document.querySelector('audio')
+    if (audio && audio.duration && isFinite(audio.duration)) {
+      const newTime = Math.max(0, Math.min(audio.duration, audio.currentTime + deltaSeconds))
+      audio.currentTime = newTime
+      store.setCurrentTime(newTime)
+      store.setProgress(newTime / audio.duration)
+    }
+  }, [])
+
   const handleCreatePlaylist = useCallback(
     (name: string) => {
       createPlaylist(name)
     },
     [createPlaylist]
   )
+
+  // Page transition variants
+  const pageVariants = {
+    initial: { opacity: 0, y: 8, filter: 'blur(4px)' },
+    animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+    exit: { opacity: 0, y: -8, filter: 'blur(4px)' }
+  }
 
   const renderPage = () => {
     if (currentPage.startsWith('playlist:')) {
@@ -146,40 +172,49 @@ export default function App() {
       {/* Title bar */}
       <TitleBar />
 
-      {/* Main content */}
-      <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar
-          currentPage={currentPage}
-          onNavigate={setCurrentPage}
-          onCreatePlaylist={() => setShowCreatePlaylist(true)}
-        />
+      {/* Main content with gesture support */}
+      <GestureHandler
+        onVolumeChange={handleGestureVolume}
+        onSeekDelta={handleGestureSeek}
+      >
+        <div className="flex-1 flex overflow-hidden relative">
+          <Sidebar
+            currentPage={currentPage}
+            onNavigate={setCurrentPage}
+            onCreatePlaylist={() => setShowCreatePlaylist(true)}
+          />
 
-        {/* Page content with transition */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentPage}
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -10 }}
-            transition={{ duration: 0.2 }}
-            className="flex-1 flex flex-col overflow-hidden"
-          >
-            {renderPage()}
-          </motion.div>
-        </AnimatePresence>
+          {/* Page content with transition */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentPage}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
+              {renderPage()}
+            </motion.div>
+          </AnimatePresence>
 
-        {/* Lyrics panel overlay */}
-        <LyricsPanel
-          isOpen={showLyrics}
-          onClose={() => setShowLyrics(false)}
-        />
-      </div>
+          {/* Lyrics panel overlay */}
+          <LyricsPanel
+            isOpen={showLyrics}
+            onClose={() => setShowLyrics(false)}
+          />
+        </div>
+      </GestureHandler>
 
       {/* Player bar */}
       <PlayerBar
         onToggleLyrics={() => setShowLyrics((prev) => !prev)}
         lyricsOpen={showLyrics}
       />
+
+      {/* Keyboard shortcut hints */}
+      <KeyHint />
 
       {/* Create playlist dialog */}
       <CreatePlaylistDialog
