@@ -8,6 +8,7 @@ import LyricsPanel from '@/components/LyricsPanel'
 import HomePage from '@/pages/HomePage'
 import LibraryPage from '@/pages/LibraryPage'
 import PlaylistPage from '@/pages/PlaylistPage'
+import SettingsPage from '@/pages/SettingsPage'
 import VideoPlayer from '@/pages/VideoPlayer'
 import usePlaylistStore from '@/store/playlistStore'
 import usePlayerStore from '@/store/playerStore'
@@ -104,6 +105,7 @@ export default function App() {
     switch (currentPage) {
       case 'home': return <HomePage />
       case 'library': return <LibraryPage />
+      case 'settings': return <SettingsPage />
       default: return <HomePage />
     }
   }
