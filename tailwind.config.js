@@ -4,18 +4,24 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+        sans: ['DM Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Outfit', 'system-ui', 'sans-serif'],
       },
       colors: {
-        // Dynamic theme colors - overridden at runtime from cover art
         primary: 'var(--color-primary, #6366f1)',
         'primary-light': 'var(--color-primary-light, #818cf8)',
         'primary-dark': 'var(--color-primary-dark, #4f46e5)',
+        fg: {
+          DEFAULT: 'var(--color-text)',
+          secondary: 'var(--color-text-secondary)',
+          muted: 'var(--color-text-muted)',
+        },
         surface: {
-          DEFAULT: 'rgba(255, 255, 255, 0.08)',
-          hover: 'rgba(255, 255, 255, 0.12)',
-          active: 'rgba(255, 255, 255, 0.16)'
-        }
+          DEFAULT: 'var(--color-surface)',
+          hover: 'var(--color-surface-hover)',
+          active: 'var(--color-surface-active)',
+        },
+        danger: 'var(--color-danger, #ef4444)',
       },
       backdropBlur: {
         glass: '20px'

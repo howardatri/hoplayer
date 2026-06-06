@@ -2,6 +2,15 @@ import { useRef, useEffect, useCallback } from 'react'
 import { getAnalyserNode } from '@/hooks/usePlayer'
 import usePlayerStore from '@/store/playerStore'
 
+const getComputedPrimary = () => getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#7c5bf5'
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 interface AudioSpectrumProps {
   width?: number
   height?: number
@@ -23,6 +32,11 @@ export default function AudioSpectrum({
   const animationRef = useRef<number>(0)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
 
+  // Reuse buffers across frames to reduce GC pressure
+  const dataArrayRef = useRef<Uint8Array | null>(null)
+  const cachedPrimaryRef = useRef<string>('')
+  const cachedPrimaryRgbaRef = useRef<string>('')
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -32,7 +46,6 @@ export default function AudioSpectrum({
 
     const analyser = getAnalyserNode()
     if (!analyser) {
-      // No analyser yet - draw idle state
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       drawIdleBars(ctx, canvas.width, canvas.height)
       if (isPlaying) {
@@ -41,21 +54,33 @@ export default function AudioSpectrum({
       return
     }
 
+    // Reuse Uint8Array buffer instead of allocating every frame
     const bufferLength = analyser.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyser.getByteFrequencyData(dataArray)
+    if (!dataArrayRef.current || dataArrayRef.current.length !== bufferLength) {
+      dataArrayRef.current = new Uint8Array(bufferLength)
+    }
+    analyser.getByteFrequencyData(dataArrayRef.current)
+
+    // Cache primary color - only recompute when it changes
+    const primary = getComputedPrimary()
+    if (primary !== cachedPrimaryRef.current) {
+      cachedPrimaryRef.current = primary
+      cachedPrimaryRgbaRef.current = primary.startsWith('#')
+        ? primary
+        : `#${primary}`
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     switch (style) {
       case 'bars':
-        drawBars(ctx, dataArray, canvas.width, canvas.height)
+        drawBars(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRgbaRef.current)
         break
       case 'wave':
-        drawWave(ctx, dataArray, canvas.width, canvas.height)
+        drawWave(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRgbaRef.current)
         break
       case 'circular':
-        drawCircular(ctx, dataArray, canvas.width, canvas.height)
+        drawCircular(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRgbaRef.current)
         break
     }
 
@@ -102,7 +127,8 @@ function drawBars(
   ctx: CanvasRenderingContext2D,
   data: Uint8Array,
   w: number,
-  h: number
+  h: number,
+  primary: string
 ) {
   const barCount = 32
   const step = Math.floor(data.length / barCount)
@@ -115,10 +141,9 @@ function drawBars(
     const x = i * (barWidth + gap) + gap / 2
     const y = h - barHeight
 
-    // Gradient from primary to transparent
     const gradient = ctx.createLinearGradient(x, y, x, h)
-    gradient.addColorStop(0, `rgba(99, 102, 241, ${0.6 + value * 0.4})`)
-    gradient.addColorStop(1, 'rgba(99, 102, 241, 0.1)')
+    gradient.addColorStop(0, hexToRgba(primary, 0.6 + value * 0.4))
+    gradient.addColorStop(1, hexToRgba(primary, 0.1))
 
     ctx.fillStyle = gradient
     ctx.beginPath()
@@ -131,13 +156,14 @@ function drawWave(
   ctx: CanvasRenderingContext2D,
   data: Uint8Array,
   w: number,
-  h: number
+  h: number,
+  primary: string
 ) {
   const sliceWidth = w / data.length
   let x = 0
 
   ctx.beginPath()
-  ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
+  ctx.strokeStyle = hexToRgba(primary, 0.8)
   ctx.lineWidth = 2
 
   for (let i = 0; i < data.length; i++) {
@@ -154,11 +180,10 @@ function drawWave(
 
   ctx.stroke()
 
-  // Fill below the wave
   ctx.lineTo(w, h)
   ctx.lineTo(0, h)
   ctx.closePath()
-  ctx.fillStyle = 'rgba(99, 102, 241, 0.1)'
+  ctx.fillStyle = hexToRgba(primary, 0.1)
   ctx.fill()
 }
 
@@ -166,7 +191,8 @@ function drawCircular(
   ctx: CanvasRenderingContext2D,
   data: Uint8Array,
   w: number,
-  h: number
+  h: number,
+  primary: string
 ) {
   const centerX = w / 2
   const centerY = h / 2
@@ -187,16 +213,15 @@ function drawCircular(
     ctx.beginPath()
     ctx.moveTo(x1, y1)
     ctx.lineTo(x2, y2)
-    ctx.strokeStyle = `rgba(99, 102, 241, ${0.3 + value * 0.7})`
+    ctx.strokeStyle = hexToRgba(primary, 0.3 + value * 0.7)
     ctx.lineWidth = 2
     ctx.lineCap = 'round'
     ctx.stroke()
   }
 
-  // Center circle
   ctx.beginPath()
   ctx.arc(centerX, centerY, radius * 0.95, 0, Math.PI * 2)
-  ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)'
+  ctx.strokeStyle = hexToRgba(primary, 0.2)
   ctx.lineWidth = 1
   ctx.stroke()
 }
@@ -215,7 +240,7 @@ function drawIdleBars(
     const barHeight = 2
     const y = h - barHeight
 
-    ctx.fillStyle = 'rgba(99, 102, 241, 0.15)'
+    ctx.fillStyle = hexToRgba(getComputedPrimary(), 0.15)
     ctx.beginPath()
     ctx.roundRect(x, y, barWidth, barHeight, [1, 1, 0, 0])
     ctx.fill()

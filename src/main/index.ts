@@ -1,28 +1,38 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net, globalShortcut } from 'electron'
 import { join, extname } from 'path'
-import { readFile } from 'fs/promises'
-import { scanDirectory, getFileCover, readFileMetadata, readLrcFile } from './ipc/fileScan'
-import Store from 'electron-store'
+import { readFile, stat as fsStat, open as fsOpen } from 'fs/promises'
+import { v4 as uuidv4 } from 'uuid'
+import type { Track } from '../shared'
+import { scanDirectory, getFileCover, readFileMetadata, readLrcFile, writeTrackTag, saveCoverFile } from './ipc/fileScan'
+import { initDatabase } from './db'
+import { registerDbHandlers } from './ipc/dbHandlers'
+import { searchLyrics, searchLyricsExact, saveLyricsFile } from './ipc/lyricsApi'
+import { fetchOnlineCover } from './ipc/coverArtApi'
+import { startWatching, stopWatching, addWatchPath, removeWatchPath } from './ipc/fileWatcher'
+import { setupTray, updateTrayMenu } from './tray'
 
 // Memory optimization
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('--js-flags', '--max-old-space-size=256')
-
-let store: InstanceType<typeof Store>
-try {
-  store = new Store()
-} catch (e) {
-  console.error('Failed to init electron-store, using fallback:', e)
-  // Fallback: in-memory store
-  const mem = new Map<string, unknown>()
-  store = {
-    get: (key: string, defaultValue?: unknown) => (mem.has(key) ? mem.get(key) : defaultValue),
-    set: (_key: string, _value: unknown) => {},
-    delete: (_key: string) => {}
-  } as unknown as InstanceType<typeof Store>
-}
+// Allow AudioContext to resume without user gesture (needed for auto-advance while minimized)
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 let mainWindow: BrowserWindow | null = null
+let isMiniMode = false
+let minimizeToTray = true
+let forceQuit = false
+let normalBounds: Electron.Rectangle | null = null
+
+const MIME_MAP: Record<string, string> = {
+  '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+  '.wma': 'audio/x-ms-wma', '.mp4': 'video/mp4', '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo'
+}
+
+function getMimeType(filePath: string): string {
+  return MIME_MAP[extname(filePath).toLowerCase()] || 'application/octet-stream'
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -39,7 +49,15 @@ function createWindow(): void {
       sandbox: false, // Need false for protocol handler to work
       spellcheck: false,
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      backgroundThrottling: false // Keep audio playing when minimized
+    }
+  })
+
+  mainWindow.on('close', (event) => {
+    if (minimizeToTray && !forceQuit) {
+      event.preventDefault()
+      mainWindow.hide()
     }
   })
 
@@ -88,6 +106,34 @@ function registerIPC(): void {
     return readLrcFile(filePath)
   })
 
+  // Lyrics online search
+  ipcMain.handle('lyrics-search', async (_event, query: string) => {
+    return searchLyrics(query)
+  })
+
+  ipcMain.handle('lyrics-search-exact', async (_event, trackName: string, artistName: string, albumName?: string, duration?: number) => {
+    return searchLyricsExact(trackName, artistName, albumName, duration)
+  })
+
+  ipcMain.handle('lyrics-save', async (_event, audioFilePath: string, lrcContent: string) => {
+    return saveLyricsFile(audioFilePath, lrcContent)
+  })
+
+  // Online cover art fetch
+  ipcMain.handle('fetch-online-cover', async (_e, artist: string, album: string) => {
+    return fetchOnlineCover(artist, album)
+  })
+
+  // Save cover art to file
+  ipcMain.handle('save-cover-file', async (_e, audioFilePath: string, dataUrl: string) => {
+    return saveCoverFile(audioFilePath, dataUrl)
+  })
+
+  // Tag editing
+  ipcMain.handle('write-track-tag', async (_event, filePath: string, tags: Parameters<typeof writeTrackTag>[1]) => {
+    return writeTrackTag(filePath, tags)
+  })
+
   // Read audio/video file as base64 for blob URL playback (seek support)
   ipcMain.handle('read-file-as-url', async (_event, filePath: string) => {
     try {
@@ -127,28 +173,83 @@ function registerIPC(): void {
 
   ipcMain.on('toggle-mini-player', () => {
     if (!mainWindow) return
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
+    if (isMiniMode) {
+      // Restore normal mode
+      if (normalBounds) mainWindow.setBounds(normalBounds)
+      mainWindow.setMinimumSize(800, 600)
+      mainWindow.setAlwaysOnTop(false)
+      isMiniMode = false
     } else {
-      mainWindow.minimize()
+      // Enter mini mode
+      normalBounds = mainWindow.getBounds()
+      mainWindow.setMinimumSize(320, 100)
+      mainWindow.setBounds({ width: 320, height: 100 })
+      mainWindow.setAlwaysOnTop(true)
+      mainWindow.center()
+      isMiniMode = true
+    }
+    mainWindow.webContents.send('mini-mode-changed', isMiniMode)
+  })
+
+  // Tray info update
+  ipcMain.on('update-tray-info', (_event, title: string, artist: string, isPlaying: boolean) => {
+    updateTrayMenu(title, artist, isPlaying)
+  })
+
+  // Minimize to tray setting
+  ipcMain.on('set-minimize-to-tray', (_e, value: boolean) => { minimizeToTray = value })
+
+  // Taskbar progress bar
+  ipcMain.on('set-taskbar-progress', (_e, progress: number) => {
+    if (!mainWindow) return
+    if (progress < 0 || progress >= 1) {
+      mainWindow.setProgressBar(-1)
+    } else {
+      mainWindow.setProgressBar(progress)
     }
   })
 
-  // Store operations
-  ipcMain.handle('store-get', async (_event, key: string, defaultValue: unknown) => {
-    try {
-      return store.get(key, defaultValue)
-    } catch {
-      return defaultValue
-    }
+  // Taskbar overlay icon
+  ipcMain.on('set-taskbar-overlay', (_e, isPlaying: boolean) => {
+    if (!mainWindow) return
+    mainWindow.setOverlayIcon(null, isPlaying ? 'Playing' : 'Paused')
   })
 
-  ipcMain.handle('store-set', async (_event, key: string, value: unknown) => {
-    try {
-      store.set(key, value)
-    } catch (e) {
-      console.error('[IPC] store-set failed:', e)
+  // Open dropped media files
+  ipcMain.handle('open-media-files', async (_event, filePaths: string[]) => {
+    const tracks: Track[] = []
+    const errors: { filePath: string; error: string }[] = []
+    for (const fp of filePaths) {
+      try {
+        const s = await fsStat(fp)
+        if (s.isDirectory()) {
+          const result = await scanDirectory(fp)
+          tracks.push(...result.tracks)
+          errors.push(...result.errors)
+        } else {
+          // Individual file — read metadata directly
+          try {
+            const meta = await readFileMetadata(fp)
+            const fileName = fp.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'Unknown'
+            const isVideo = /\.(mp4|webm|mkv|avi)$/i.test(fp)
+            tracks.push({
+              id: uuidv4(),
+              title: meta?.title || fileName,
+              artist: meta?.artist || 'Unknown Artist',
+              album: meta?.album || 'Unknown Album',
+              duration: meta?.duration || 0,
+              filePath: fp,
+              format: (isVideo ? 'video' : 'audio') as 'audio' | 'video'
+            })
+          } catch (e) {
+            errors.push({ filePath: fp, error: String(e) })
+          }
+        }
+      } catch (e) {
+        errors.push({ filePath: fp, error: String(e) })
+      }
     }
+    return { tracks, errors }
   })
 
   // Directory dialog — use focused window as fallback
@@ -164,6 +265,12 @@ function registerIPC(): void {
     if (result.canceled) return null
     return result.filePaths[0]
   })
+
+  // File watcher controls
+  ipcMain.on('start-watching', (_e, paths: string[]) => { startWatching(paths) })
+  ipcMain.on('stop-watching', () => { stopWatching() })
+  ipcMain.on('add-watch-path', (_e, path: string) => { addWatchPath(path) })
+  ipcMain.on('remove-watch-path', (_e, path: string) => { removeWatchPath(path) })
 }
 
 // Custom protocol for local files — must be registered before app.ready
@@ -179,18 +286,69 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Register custom protocol for serving local audio/video files
-  protocol.handle('local', (request) => {
+  protocol.handle('local', async (request) => {
     const url = request.url
     let filePath = decodeURIComponent(url.slice('local://'.length))
     filePath = filePath.replace(/\\/g, '/')
+
+    // Handle range requests (required for video/audio seeking)
+    const rangeHeader = request.headers.get('Range')
+    if (rangeHeader) {
+      try {
+        const fileStat = await fsStat(filePath)
+        const fileSize = fileStat.size
+        const parts = rangeHeader.replace(/bytes=/, '').split('-')
+        const start = parseInt(parts[0], 10)
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+
+        if (start >= fileSize || start < 0) {
+          return new Response(null, {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${fileSize}` }
+          })
+        }
+
+        const chunkSize = end - start + 1
+        const handle = await fsOpen(filePath, 'r')
+        const buffer = Buffer.alloc(chunkSize)
+        await handle.read(buffer, 0, chunkSize, start)
+        await handle.close()
+
+        return new Response(buffer, {
+          status: 206,
+          headers: {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': String(chunkSize),
+            'Content-Type': getMimeType(filePath)
+          }
+        })
+      } catch (e) {
+        console.error('[protocol] range request failed:', e)
+        return new Response(null, { status: 404 })
+      }
+    }
+
+    // No range header — serve full file via net.fetch
     const fileUrl = `file:///${filePath.startsWith('/') ? filePath.slice(1) : filePath}`
     return net.fetch(fileUrl)
   })
 
+  await initDatabase()
+
+  // Start file watcher for saved scan paths
+  const { dbApi } = await import('./db')
+  const savedPaths = dbApi.getScanPaths()
+  if (savedPaths.length > 0) {
+    startWatching(savedPaths)
+  }
+
   registerIPC()
+  registerDbHandlers()
   createWindow()
+  setupTray(() => mainWindow, () => { forceQuit = true; app.quit() })
   registerGlobalShortcuts()
 
   app.on('activate', () => {

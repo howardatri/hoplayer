@@ -45,11 +45,11 @@ export default function CreatePlaylistDialog({
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <ListMusic className="w-5 h-5 text-primary" />
-                <h2 className="text-lg font-semibold text-white">New Playlist</h2>
+                <h2 className="text-lg font-semibold text-fg">New Playlist</h2>
               </div>
               <button
                 onClick={onClose}
-                className="p-1 rounded-full hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                className="p-1 rounded-full hover:bg-surface-hover text-fg-muted hover:text-fg transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -62,14 +62,14 @@ export default function CreatePlaylistDialog({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Playlist name..."
                 autoFocus
-                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors mb-4"
+                className="w-full px-4 py-2.5 bg-surface border border-[var(--color-border)] rounded-lg text-sm text-fg placeholder:text-fg-muted focus:outline-none focus:border-primary/50 transition-colors mb-4"
               />
 
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-sm text-white/50 hover:text-white transition-colors"
+                  className="px-4 py-2 text-sm text-fg-secondary hover:text-fg transition-colors"
                 >
                   Cancel
                 </button>
@@ -78,7 +78,7 @@ export default function CreatePlaylistDialog({
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   disabled={!name.trim()}
-                  className="px-6 py-2 bg-primary rounded-lg text-sm text-white font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                  className="px-6 py-2 bg-primary rounded-lg text-sm text-fg font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
                 >
                   Create
                 </motion.button>

@@ -11,10 +11,18 @@ interface PlayerStore {
   duration: number
   repeatMode: RepeatMode
   isShuffle: boolean
+  playbackSpeed: number
 
   // Queue
   queue: Track[]
   currentIndex: number
+
+  // Equalizer
+  eqBands: number[]
+  eqPreset: string
+
+  // Crossfade & gapless
+  crossfadeDuration: number // seconds, 0 = disabled
 
   // Actions
   setCurrentTrack: (track: Track | null) => void
@@ -25,6 +33,7 @@ interface PlayerStore {
   setDuration: (duration: number) => void
   toggleRepeat: () => void
   toggleShuffle: () => void
+  setPlaybackSpeed: (speed: number) => void
 
   // Queue actions
   setQueue: (tracks: Track[], startIndex?: number) => void
@@ -32,6 +41,14 @@ interface PlayerStore {
   playPrev: () => void
   addToQueue: (track: Track) => void
   removeFromQueue: (index: number) => void
+  peekNext: () => Track | null
+
+  // EQ actions
+  setEqBands: (bands: number[]) => void
+  setEqPreset: (preset: string) => void
+
+  // Crossfade actions
+  setCrossfadeDuration: (seconds: number) => void
 }
 
 const usePlayerStore = create<PlayerStore>((set, get) => ({
@@ -43,9 +60,15 @@ const usePlayerStore = create<PlayerStore>((set, get) => ({
   duration: 0,
   repeatMode: 'off',
   isShuffle: false,
+  playbackSpeed: 1.0,
 
   queue: [],
   currentIndex: -1,
+
+  eqBands: [0, 0, 0, 0, 0],
+  eqPreset: 'flat',
+
+  crossfadeDuration: 0, // disabled by default
 
   setCurrentTrack: (track) => set({ currentTrack: track }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
@@ -60,6 +83,12 @@ const usePlayerStore = create<PlayerStore>((set, get) => ({
       return { repeatMode: modes[nextIndex] }
     }),
   toggleShuffle: () => set((state) => ({ isShuffle: !state.isShuffle })),
+  setPlaybackSpeed: (speed) => set({ playbackSpeed: Math.max(0.5, Math.min(3.0, speed)) }),
+
+  setEqBands: (bands) => set({ eqBands: bands.map(g => Math.max(-12, Math.min(12, g))) }),
+  setEqPreset: (preset) => set({ eqPreset: preset }),
+
+  setCrossfadeDuration: (seconds) => set({ crossfadeDuration: Math.max(0, Math.min(12, seconds)) }),
 
   setQueue: (tracks, startIndex = 0) =>
     set({
@@ -139,7 +168,29 @@ const usePlayerStore = create<PlayerStore>((set, get) => ({
         currentIndex: newIndex,
         currentTrack: newQueue[newIndex] || null
       }
-    })
+    }),
+
+  peekNext: () => {
+    const { queue, currentIndex, repeatMode, isShuffle } = get()
+    if (queue.length === 0) return null
+
+    if (repeatMode === 'one') return queue[currentIndex] || null
+
+    if (isShuffle) {
+      let idx = Math.floor(Math.random() * queue.length)
+      if (queue.length > 1) {
+        while (idx === currentIndex) idx = Math.floor(Math.random() * queue.length)
+      }
+      return queue[idx] || null
+    }
+
+    let nextIndex = currentIndex + 1
+    if (nextIndex >= queue.length) {
+      if (repeatMode === 'all') nextIndex = 0
+      else return null
+    }
+    return queue[nextIndex] || null
+  }
 }))
 
 export default usePlayerStore

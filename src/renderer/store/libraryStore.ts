@@ -11,6 +11,7 @@ interface LibraryStore {
   setTracks: (tracks: Track[]) => void
   addTracks: (tracks: Track[]) => void
   removeTrack: (id: string) => void
+  updateTrack: (id: string, updates: Partial<Track>) => void
   setIsLoading: (loading: boolean) => void
   addScanPath: (path: string) => void
   removeScanPath: (path: string) => void
@@ -38,6 +39,10 @@ const useLibraryStore = create<LibraryStore>((set, get) => ({
   removeTrack: (id) =>
     set((state) => ({
       tracks: state.tracks.filter((t) => t.id !== id)
+    })),
+  updateTrack: (id, updates) =>
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === id ? { ...t, ...updates } : t))
     })),
   setIsLoading: (loading) => set({ isLoading: loading }),
   addScanPath: (path) =>

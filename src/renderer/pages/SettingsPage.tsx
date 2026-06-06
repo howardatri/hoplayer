@@ -1,13 +1,31 @@
-import { useState } from 'react'
-import { FolderOpen, Trash2, Plus, Volume2, Keyboard, Info, RefreshCw } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { FolderOpen, Trash2, Plus, Volume2, Keyboard, Info, RefreshCw, Palette, Minimize2 } from 'lucide-react'
 import { useLibrary } from '@/hooks/useLibrary'
 import usePlayerStore from '@/store/playerStore'
+import useSettingsStore from '@/store/settingsStore'
+import { groupTracksByFolder } from '@/utils/paths'
+import { themes } from '@/themes'
 
 export default function SettingsPage() {
   const { tracks, scanPaths, addDirectory, removeDirectory, isLoading, scanDirectory } = useLibrary()
   const volume = usePlayerStore(s => s.volume)
   const setVolume = usePlayerStore(s => s.setVolume)
+  const crossfadeDuration = usePlayerStore(s => s.crossfadeDuration)
+  const setCrossfadeDuration = usePlayerStore(s => s.setCrossfadeDuration)
+  const themeId = useSettingsStore(s => s.themeId)
+  const setThemeId = useSettingsStore(s => s.setThemeId)
+  const minimizeToTray = useSettingsStore(s => s.minimizeToTray)
+  const setMinimizeToTray = useSettingsStore(s => s.setMinimizeToTray)
   const [scanning, setScanning] = useState<string | null>(null)
+
+  const folderTrackCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    const grouped = groupTracksByFolder(tracks, scanPaths)
+    for (const [folder, folderTracks] of grouped) {
+      if (folder !== '__unknown__') counts.set(folder, folderTracks.length)
+    }
+    return counts
+  }, [tracks, scanPaths])
 
   const handleRescan = async (path: string) => {
     setScanning(path)
@@ -29,11 +47,86 @@ export default function SettingsPage() {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 32 }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'white', marginBottom: 32 }}>Settings</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-text)', marginBottom: 32 }}>Settings</h1>
+
+        {/* Appearance */}
+        <Section icon={<Palette size={18} />} title="Appearance">
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
+            Choose a color theme for the interface. Dynamic album colors still apply on top.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {themes.map(theme => {
+              const isActive = themeId === theme.id
+              const c = theme.colors
+              return (
+                <button
+                  key={theme.id}
+                  onClick={() => setThemeId(theme.id)}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                    padding: '14px 10px', borderRadius: 10, cursor: 'pointer',
+                    background: isActive ? c.surfaceHover : c.surface,
+                    border: isActive ? `2px solid ${c.primary}` : `1px solid ${c.border}`,
+                    transition: 'all 0.2s',
+                    position: 'relative',
+                  }}
+                >
+                  {/* Color preview dots */}
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: '50%', background: c.primary, boxShadow: `0 0 8px ${c.primary}66` }} />
+                    <div style={{ width: 16, height: 16, borderRadius: '50%', background: c.accent }} />
+                    <div style={{ width: 16, height: 16, borderRadius: '50%', background: c.bg, border: `1px solid ${c.border}` }} />
+                  </div>
+                  <span style={{
+                    fontSize: 12, fontWeight: isActive ? 600 : 400,
+                    color: isActive ? c.primary : 'var(--color-text-secondary)',
+                  }}>
+                    {theme.name}
+                  </span>
+                  {isActive && (
+                    <div style={{
+                      position: 'absolute', top: 6, right: 8,
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: c.primary,
+                    }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </Section>
+
+        {/* Behavior */}
+        <Section icon={<Minimize2 size={18} />} title="Behavior">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>最小化到托盘</div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>Close button hides to system tray instead of quitting</div>
+            </div>
+            <button
+              onClick={() => {
+                const next = !minimizeToTray
+                setMinimizeToTray(next)
+                window.electronAPI.setMinimizeToTray(next)
+              }}
+              style={{
+                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: minimizeToTray ? 'var(--color-primary)' : 'var(--color-border)',
+                position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+              }}
+            >
+              <div style={{
+                width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                position: 'absolute', top: 3, left: minimizeToTray ? 23 : 3,
+                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }} />
+            </button>
+          </div>
+        </Section>
 
         {/* Music Folders */}
         <Section icon={<FolderOpen size={18} />} title="Music Folders">
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
             Manage the folders hoplayer scans for music and video files.
           </p>
 
@@ -42,31 +135,30 @@ export default function SettingsPage() {
               <div
                 key={path}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '10px 14px',
-                  background: 'rgba(255,255,255,0.04)',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255,255,255,0.06)'
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '10px 14px', borderRadius: 8,
+                  background: 'var(--color-surface)', border: '1px solid var(--color-border)',
                 }}
               >
-                <FolderOpen size={16} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <FolderOpen size={16} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {path}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                  {folderTrackCounts.get(path) || 0} tracks
                 </span>
                 <button
                   onClick={() => handleRescan(path)}
                   disabled={scanning === path}
                   title="Rescan"
-                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4, display: 'flex' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 4, display: 'flex' }}
                 >
                   <RefreshCw size={14} style={scanning === path ? { animation: 'spin 1s linear infinite' } : undefined} />
                 </button>
                 <button
                   onClick={() => removeDirectory(path)}
                   title="Remove"
-                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 4, display: 'flex' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 4, display: 'flex' }}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -74,7 +166,7 @@ export default function SettingsPage() {
             ))}
 
             {scanPaths.length === 0 && (
-              <div style={{ padding: '20px', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
                 No folders added yet
               </div>
             )}
@@ -84,42 +176,57 @@ export default function SettingsPage() {
             onClick={addDirectory}
             disabled={isLoading}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 20px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 8,
-              fontSize: 13,
-              color: 'rgba(255,255,255,0.6)',
-              cursor: 'pointer'
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 20px', borderRadius: 8, fontSize: 13,
+              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+              color: 'var(--color-text-secondary)', cursor: 'pointer',
             }}
           >
             <Plus size={14} />
             Add Folder
           </button>
 
-          <div style={{ marginTop: 12, fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-muted)' }}>
             {tracks.length} tracks in library
           </div>
         </Section>
 
         {/* Audio */}
         <Section icon={<Volume2 size={18} />} title="Audio">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', width: 60 }}>Volume</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(volume * 100)}
-              onChange={e => setVolume(Number(e.target.value) / 100)}
-              style={{ flex: 1, accentColor: 'var(--color-primary, #6366f1)' }}
-            />
-            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', width: 40, textAlign: 'right' }}>
-              {Math.round(volume * 100)}%
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', width: 60 }}>Volume</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(volume * 100)}
+                onChange={e => setVolume(Number(e.target.value) / 100)}
+                style={{ flex: 1, accentColor: 'var(--color-primary)' }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', width: 40, textAlign: 'right' }}>
+                {Math.round(volume * 100)}%
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', width: 60, flexShrink: 0 }}>Crossfade</span>
+              <input
+                type="range"
+                min={0}
+                max={12}
+                step={0.5}
+                value={crossfadeDuration}
+                onChange={e => setCrossfadeDuration(Number(e.target.value))}
+                style={{ flex: 1, accentColor: 'var(--color-primary)' }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', width: 50, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {crossfadeDuration === 0 ? 'Off' : `${crossfadeDuration}s`}
+              </span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -8 }}>
+              Smoothly blends consecutive tracks. Set to 0 to disable.
+            </p>
           </div>
         </Section>
 
@@ -128,15 +235,11 @@ export default function SettingsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {shortcuts.map(s => (
               <div key={s.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{s.action}</span>
+                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{s.action}</span>
                 <kbd style={{
-                  padding: '3px 8px',
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 4,
-                  fontSize: 12,
-                  color: 'rgba(255,255,255,0.6)',
-                  fontFamily: 'monospace'
+                  padding: '3px 8px', borderRadius: 4, fontSize: 12, fontFamily: 'monospace',
+                  background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
                 }}>
                   {s.key}
                 </kbd>
@@ -147,10 +250,10 @@ export default function SettingsPage() {
 
         {/* About */}
         <Section icon={<Info size={18} />} title="About">
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.8 }}>
-            <p><strong style={{ color: 'rgba(255,255,255,0.8)' }}>hoplayer</strong> v0.1.0</p>
+          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.8 }}>
+            <p><strong style={{ color: 'var(--color-text)' }}>hoplayer</strong> v0.1.0</p>
             <p>Modern music/video player with clean UI and creative interactions.</p>
-            <p style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
+            <p style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
               Built with Electron + React + TypeScript + Tailwind CSS
             </p>
           </div>
@@ -164,10 +267,10 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
   return (
     <div style={{ marginBottom: 32 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{ color: 'var(--color-primary, #6366f1)' }}>{icon}</span>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'white' }}>{title}</h2>
+        <span style={{ color: 'var(--color-primary)' }}>{icon}</span>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)' }}>{title}</h2>
       </div>
-      <div style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ padding: '16px 20px', borderRadius: 12, background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
         {children}
       </div>
     </div>

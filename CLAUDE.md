@@ -4,24 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-hoplayer — 现代音乐/视频播放器，追求简洁美观的 UI 和有创意的交互体验。
+hoplayer — 现代本地音乐/视频播放器，追求简洁美观的 UI 和有创意的交互体验。目标是成为 Windows 上媲美 foobar2000 / MusicBee 的本地播放器，同时保持现代化的视觉设计。
 
 ## Tech Stack
 
 - **框架**: Electron + React 18 + TypeScript
 - **构建**: Vite (electron-vite)
-- **样式**: Tailwind CSS 4
+- **样式**: Tailwind CSS 3.4
 - **动画**: Framer Motion
-- **状态管理**: Zustand
-- **音频**: Web Audio API + wavesurfer.js（波形可视化）
+- **状态管理**: Zustand（playerStore + libraryStore + settingsStore + toastStore + playlistStore + searchStore）
+- **音频**: Web Audio API（AudioContext + AnalyserNode + BiquadFilterNode EQ 链）
 - **视频**: HTML5 `<video>`
-- **元数据**: music-metadata（解析音频文件信息）
+- **元数据**: music-metadata（解析）+ node-id3（MP3 标签写入）
+- **数据库**: sql.js（SQLite，持久化曲库/播放列表/扫描路径）
 - **图标**: Lucide React
+- **列表**: react-window（虚拟滚动）
 
 ## Build & Run
 
 ```bash
-# 初始化后填入实际命令
 npm install
 npm run dev        # 开发模式（热重载）
 npm run build      # 生产构建
@@ -32,88 +33,237 @@ npm run lint       # 代码检查
 
 ```
 src/
-├── main/           # Electron 主进程
-│   ├── index.ts    # 入口，BrowserWindow 创建，IPC 注册
-│   └── ipc/        # IPC handler（文件扫描、元数据读取等）
-├── renderer/       # React 前端
-│   ├── components/ # UI 组件
-│   ├── hooks/      # 自定义 hooks（usePlayer, usePlaylist 等）
-│   ├── store/      # Zustand store
-│   ├── pages/      # 页面（首页、库、设置等）
-│   └── utils/      # 工具函数
-├── shared/         # 主进程/渲染进程共享的类型定义
-└── assets/         # 静态资源
+├── main/                  # Electron 主进程
+│   ├── index.ts           # 入口，BrowserWindow，IPC 注册，协议处理，全局快捷键
+│   ├── db.ts              # SQLite 数据库初始化（sql.js）
+│   ├── tray.ts            # 系统托盘
+│   └── ipc/
+│       ├── fileScan.ts    # 文件扫描、元数据解析、封面提取、标签写入
+│       ├── dbHandlers.ts  # 数据库 IPC handlers（CRUD 操作）
+│       └── lyricsApi.ts   # 在线歌词搜索 API（lrclib）
+├── renderer/              # React 前端
+│   ├── components/        # UI 组件（18 个）
+│   │   ├── PlayerBar.tsx          # 底部播放控制栏
+│   │   ├── TrackList.tsx          # 虚拟滚动歌曲列表
+│   │   ├── DraggableTrackList.tsx # 可拖拽排序的歌曲列表
+│   │   ├── Sidebar.tsx            # 左侧导航栏
+│   │   ├── CoverArt.tsx           # 封面图（含黑胶旋转动画）
+│   │   ├── Equalizer.tsx          # 5 段均衡器面板
+│   │   ├── LyricsPanel.tsx        # 歌词面板（本地 + 在线搜索）
+│   │   ├── QueuePanel.tsx         # 播放队列面板
+│   │   ├── AudioSpectrum.tsx      # 音频频谱可视化（bars/wave/circular）
+│   │   ├── ProgressSlider.tsx     # 进度条
+│   │   ├── Slider.tsx             # 通用滑块
+│   │   ├── MiniPlayer.tsx         # 迷你播放器
+│   │   ├── TitleBar.tsx           # 自定义标题栏
+│   │   ├── ContextMenu.tsx        # 右键菜单
+│   │   ├── Toast.tsx              # 通知提示
+│   │   ├── TrackPropertiesDialog.tsx # 曲目属性/标签编辑
+│   │   ├── CreatePlaylistDialog.tsx  # 创建播放列表
+│   │   └── GestureHandler.tsx     # 手势控制
+│   ├── hooks/             # 自定义 hooks
+│   │   ├── usePlayer.ts           # 核心播放逻辑（双 AudioElement + Web Audio EQ 链）
+│   │   ├── useCoverArt.ts         # 封面加载 + LRU 缓存（200 条上限）
+│   │   ├── useThemeColor.ts       # 封面主色调提取
+│   │   ├── useLibrary.ts          # 曲库管理（SQLite CRUD）
+│   │   └── usePlaylistStore.ts    # 播放列表管理
+│   ├── store/             # Zustand stores
+│   │   ├── playerStore.ts         # 播放状态、队列、EQ、crossfade
+│   │   ├── libraryStore.ts        # 曲库状态、扫描路径
+│   │   ├── settingsStore.ts       # 持久化设置（localStorage）
+│   │   ├── toastStore.ts          # 通知系统
+│   │   ├── playlistStore.ts       # 播放列表
+│   │   └── searchStore.ts         # 搜索状态
+│   ├── pages/             # 页面
+│   │   ├── HomePage.tsx           # 首页（最近添加、艺术家）
+│   │   ├── LibraryPage.tsx        # 曲库（搜索、排序、分组）
+│   │   ├── FolderPage.tsx         # 文件夹管理
+│   │   ├── ArtistPage.tsx         # 艺术家/专辑详情
+│   │   ├── PlaylistPage.tsx       # 播放列表详情
+│   │   ├── VideoPlayer.tsx        # 视频播放器
+│   │   └── SettingsPage.tsx       # 设置（主题、文件夹、音频、快捷键）
+│   ├── themes.ts          # 10 个主题定义（6 暗色 + 4 亮色）
+│   ├── utils/
+│   │   ├── paths.ts       # 路径工具函数
+│   │   └── lrcParser.ts   # LRC 歌词解析器
+│   └── index.css          # 全局样式 + CSS 变量
+├── shared/
+│   └── index.ts           # 共享类型定义（Track, RepeatMode 等）
+└── preload/
+    └── index.ts           # contextBridge API 暴露
 ```
 
 ### 进程分工
 
-- **主进程**: 文件系统操作、元数据解析、IPC 响应
-- **渲染进程**: UI 渲染、音频播放控制、用户交互
+- **主进程**: 文件系统操作、元数据解析、SQLite 数据库、IPC 响应、系统托盘、全局快捷键
+- **渲染进程**: UI 渲染、音频播放控制（Web Audio API）、用户交互
 - **IPC 通信**: 使用 `contextBridge` 暴露安全 API，禁止 `nodeIntegration`
+
+### 音频管线架构
+
+```
+HTMLAudioElement[0] → MediaElementSource[0] → EQ[0](5×BiquadFilter) → GainNode[0] ─┐
+                                                                                    ├→ AnalyserNode → Destination
+HTMLAudioElement[1] → MediaElementSource[1] → EQ[1](5×BiquadFilter) → GainNode[1] ─┘
+```
+
+- 双 AudioElement 支持 crossfade（gain 动画过渡）
+- EQ 通过 BiquadFilterNode 链实现，支持 5 段 ±12dB
+- AnalyserNode 提供频谱数据给 AudioSpectrum 可视化
+- `ensureWebAudio()` 延迟初始化，首次播放或打开 EQ 时创建
 
 ## Memory Optimization
 
 Electron 内存优化是本项目的硬性要求：
 
-- `app.disableHardwareAcceleration()` — 不做 3D 渲染时关闭
+- `app.disableHardwareAcceleration()` — 关闭 GPU 渲染
+- `--max-old-space-size=256` — 限制 V8 堆大小
 - 单窗口架构，不使用多 `BrowserWindow`
-- 禁用 Chromium 无用特性：`spellcheck: false`, `sandbox: true`
-- 播放列表使用虚拟滚动（react-window 或 tanstack-virtual），只渲染可见项
-- 封面图按需加载，使用 `URL.revokeObjectURL` 及时释放 blob URL
-- 限制 V8 堆大小：`app.commandLine.appendSwitch('--js-flags', '--max-old-space-size=256')`
+- `spellcheck: false`, `sandbox: false`（protocol handler 需要）
+- 播放列表使用 `react-window` 虚拟滚动，只渲染可见项
+- 封面图 LRU 缓存（上限 200 条），超出自动淘汰
+- `useThemeColor` 复用单例 Canvas，切歌时中断旧 Image 加载
+- `usePlayer` 手动切歌时清理非活跃 AudioElement 的 media buffer
+- `AudioSpectrum` 复用 Uint8Array buffer，缓存主色调避免每帧 `getComputedStyle`
+- Toast 系统清理 pending timers，ContextMenu 清理 setTimeout
+- seek 操作不堆叠 timeout
 
 ## UI Design Principles
 
 - **极简**: 界面元素克制，留白充足，不做信息过载
 - **玻璃拟态**: 半透明模糊背景（backdrop-filter: blur），营造层次感
 - **色彩**: 从当前播放的封面图提取主色调，动态应用到 UI 主题
+- **主题**: 10 个内置主题（6 暗色 + 4 亮色），所有颜色通过 CSS 变量驱动
 - **动效**: 使用 Framer Motion 做过渡动画，不滥用，只在有意义的地方用
-- **字体**: 选用一款现代无衬线字体（如 Inter），保持排版一致性
+- **字体**: Inter，保持排版一致性
+- **主题适配**: 所有组件使用 CSS 变量（`--color-primary`, `--color-text` 等）或 Tailwind 主题 token（`text-fg`, `bg-surface` 等），不硬编码颜色
 
-## Core Features
+## Current Features (v0.1.0)
 
-### 一期（MVP）
-- [x] 项目脚手架搭建
-- [x] 音频播放（mp3, flac, wav, ogg）
-- [x] 视频播放（mp4, webm）
-- [x] 本地文件夹扫描，自动建立音乐库
-- [x] 播放列表（创建、编辑、排序）
-- [x] 基础播放控制（播放/暂停、上一首/下一首、进度条、音量）
-- [x] 封面图显示
+### 播放
+- [x] 音频播放：MP3, FLAC, WAV, OGG, M4A, AAC, WMA
+- [x] 视频播放：MP4, WebM, MKV, AVI
+- [x] 播放控制：播放/暂停、上一首/下一首、进度条、音量
+- [x] 重复模式：关闭/全部/单曲
+- [x] 随机播放（避免连续重复）
+- [x] 播放速度：0.5x ~ 3.0x
+- [x] Crossfade：0~12 秒，双 AudioElement + GainNode 动画过渡
+- [x] 播放队列管理
+- [x] 5 段均衡器 + 8 个预设（Flat/Rock/Pop/Jazz/Classical/Bass Boost/Treble Boost/Vocal）
+- [x] 音频频谱可视化（bars/wave/circular）
+
+### 曲库
+- [x] 文件夹扫描 + SQLite 持久化
+- [x] 搜索（标题/艺术家/专辑）
+- [x] 排序（标题/艺术家/专辑/时长，升序/降序）
+- [x] 文件夹分组视图
+- [x] 艺术家/专辑详情页
+- [x] 虚拟滚动（react-window）
+- [x] 曲目属性查看 + MP3 标签编辑
+- [x] 拖拽文件导入
+
+### 播放列表
+- [x] 创建/删除/重命名
+- [x] 添加/移除曲目
+- [x] 拖拽排序
+- [x] SQLite 持久化
+
+### UI/UX
+- [x] 自定义无边框窗口 + 标题栏
 - [x] 迷你播放器模式
+- [x] 系统托盘控制
+- [x] 全局媒体键快捷键
+- [x] 右键菜单系统
+- [x] Toast 通知
+- [x] 手势控制（滑动调音量/进度）
+- [x] 键盘快捷键可视化提示
+- [x] 黑胶唱片旋转动画
+- [x] 封面主色调动态主题
+- [x] 10 个内置主题（6 暗 + 4 亮）
+- [x] 玻璃拟态 UI
+- [x] Framer Motion 页面过渡动画
 
-### 二期（体验增强）
-- [x] 音频频谱/波形可视化（Canvas 2D）
-- [x] 从封面图提取主色调，动态主题
-- [x] 全局快捷键（播放/暂停、切歌）
-- [x] 歌词显示（支持 .lrc 文件）
-- [x] 拖拽排序播放列表
-- [x] 搜索（按标题、艺术家、专辑）
+### 歌词
+- [x] 本地 .lrc 文件加载
+- [x] 在线歌词搜索（lrclib API）
+- [x] 歌词预览 + 保存到本地
+- [x] 同步歌词自动滚动 + 点击跳转
 
-### 三期（创意交互）
-- [x] 手势控制：在播放器区域滑动调节音量/进度
-- [x] 封面旋转动画：播放时缓慢旋转，暂停时停止
-- [x] 页面切换动画：共享元素过渡（封面图从列表滑入播放页）
-- [x] 键盘快捷键可视化提示（按任意键弹出对应操作提示）
+---
+
+## 与主流播放器的差距分析
+
+对比 foobar2000、MusicBee、Apple Music、Spotify、AIMP 等主流播放器：
+
+### Tier 1 — 必须具备（高优先级）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 播放次数/最近播放统计 | ❌ | 解锁智能播放列表、最近播放、最常播放等所有发现功能的基础 |
+| 文件夹监听（自动扫描） | ❌ | 添加 chokidar 监听扫描路径，自动检测新增/删除文件 |
+| 无缝播放（Gapless） | ❌ | 古典/现场/DJ 混音必需，需要 AudioBufferSourceNode 精确调度 |
+| ReplayGain / 音量标准化 | ❌ | 防止曲目间音量跳变，读取 RG 标签通过 GainNode 补偿 |
+| 输出设备选择 | ❌ | setSinkId() 实现，USB DAC / 蓝牙耳机用户必需 |
+| 标签写入扩展到 FLAC/OGG/M4A | ❌ | 目前仅支持 MP3（node-id3） |
+| M3U 播放列表导入/导出 | ❌ | 与其他播放器互通的标准格式 |
+| 任务栏集成 | ❌ | setThumbarButtons() 播放控制 + setProgressBar() 进度条 |
+
+### Tier 2 — 差异化功能（中优先级）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 智能播放列表 | ❌ | 规则引擎：流派=X、播放次数>N、最近7天添加 |
+| Last.fm Scrobbling | ❌ | 社区功能，HTTP POST 到 last.fm API |
+| 批量标签编辑 | ❌ | 多选曲目批量修改艺术家/专辑/年份等字段 |
+| 在线元数据查找 | ❌ | MusicBrainz API 自动补全专辑信息 |
+| 重复文件检测 | ❌ | 按文件哈希或元数据匹配 |
+| 播放列表文件夹 | ❌ | 层级组织播放列表 |
+| 切歌系统通知 | ❌ | new Notification() 显示曲目信息 |
+| 快捷键自定义 | ❌ | 目前硬编码，需提供按键绑定 UI |
+| 专辑/流派浏览视图 | ❌ | 专门的按专辑网格、按流派浏览页面 |
+| 全屏模式 | ❌ | 沉浸式歌词/可视化体验 |
+
+### Tier 3 — 进阶功能（低优先级）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 曲库统计页面 | ❌ | 总曲目/总时长/存储占用/Top 10 艺术家 |
+| 封面图管理 | ❌ | 在线获取/嵌入/替换封面 |
+| CUE sheet 支持 | ❌ | 单文件整轨 + cue 虚拟分轨 |
+| Crossfeed（耳机交叉馈送） | ❌ | Web Audio API 可实现 |
+| 评分系统 | ❌ | 1-5 星，存 SQLite + 可写入 ID3 POPM |
+| Opus 格式 | ❌ | 加入扩展名即可 |
+| 远程控制（Web/手机） | ❌ | LAN HTTP 服务器 |
+| 命令行控制 | ❌ | --play / --next / --enqueue |
+| WASAPI 独占模式 | ❌ | 需要原生音频输出，Web Audio API 无法实现 |
+
+### hoplayer 的独特优势
+
+- **封面主色调动态主题** — Apple Music / Spotify 都没有的功能
+- **手势控制** — 创新的交互方式
+- **黑胶旋转动画** — 视觉差异化
+- **玻璃拟态 UI** — 现代感强
+- **Crossfade 实现** — 双 AudioElement + GainNode 动画，比大多数播放器精细
+- **SQLite 持久化** — 比 JSON 文件方案更可靠
+- **键盘快捷键可视化** — 降低学习成本
 
 ## Agent Implementation Notes
 
 - 使用 `electron-vite` 脚手架初始化，避免手动配置 Webpack
 - 主进程和渲染进程的类型定义放在 `shared/`，通过 IPC 传递时保持类型安全
 - 音频播放逻辑封装为 `usePlayer` hook，暴露统一的播放控制接口
-- 所有 UI 组件使用 Tailwind 原子类，不写自定义 CSS（除动画关键帧）
+- UI 组件使用 Tailwind 原子类 + CSS 变量，不硬编码颜色
 - 动画统一用 Framer Motion，不混用 CSS transition 和 JS 动画
 - 本地文件通过自定义 `local://` 协议加载，主进程用 `protocol.handle` 将其转为 `file://` 路径
 - 使用 `@electron-toolkit/utils` 的 `is` 工具判断开发/生产环境
-- 使用 `electron-store` 持久化用户数据（扫描路径、播放列表、曲库）
-- Web Audio API 的 `AnalyserNode` 通过单例模式管理，`usePlayer` hook 负责初始化并连接 `HTMLAudioElement`
+- 数据库使用 sql.js（SQLite WASM），数据持久化到用户目录
+- Web Audio API 的 `AnalyserNode` 通过单例模式管理，`usePlayer` hook 负责初始化并连接
 - 音频频谱支持三种渲染模式：bars、wave、circular，均使用 Canvas 2D
-- 封面主色调提取：Canvas 降采样到 64x64，过滤暗/亮像素后取加权平均，应用为 CSS 变量
-- 全局快捷键：主进程注册 `MediaPlayPause`/`MediaNextTrack`/`MediaPreviousTrack`，通过 IPC 发送到渲染进程
+- 封面主色调提取：复用单例 Canvas 降采样到 64x64，过滤暗/亮像素后取加权平均
+- 全局快捷键：主进程注册 `MediaPlayPause`/`MediaNextTrack`/`MediaPreviousTrack`，通过 IPC 发送
 - 歌词解析：LRC 格式解析器支持多时间戳行和扩展标签，二分查找定位当前行
 - 拖拽排序：原生 HTML5 Drag and Drop API，无第三方依赖
-- 全局搜索：Sidebar 搜索框通过 Zustand searchStore 与 LibraryPage 同步查询
-- 手势控制：Pointer Events API 实现水平滑动调节进度、右侧垂直滑动调节音量，带视觉反馈
-- 封面旋转：大尺寸封面采用双层结构（vinyl 底层 + cover 图片层），Framer Motion 动画驱动旋转
-- 页面切换：Blur + Y 轴位移的 AnimatePresence 过渡动画
-- 键盘提示：全局 keydown 监听，匹配快捷键后显示 1.2s 的浮动提示卡片
+- 手势控制：Pointer Events API 实现水平滑动调节进度、右侧垂直滑动调节音量
+- 封面旋转：大尺寸封面采用双层结构（vinyl 底层 + cover 图片层），Framer Motion 驱动
+- 主题系统：所有颜色通过 CSS 变量驱动，Tailwind 配置扩展 `fg`/`surface` 系列 token
+- 封面缓存：LRU 策略，上限 200 条，超出自动淘汰最旧条目

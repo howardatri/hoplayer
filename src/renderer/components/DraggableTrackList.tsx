@@ -84,7 +84,7 @@ export default function DraggableTrackList({
 
   if (tracks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-white/20">
+      <div className="flex flex-col items-center justify-center py-16 text-fg-muted">
         <Music className="w-10 h-10 mb-3 opacity-30" />
         <p className="text-sm">No tracks</p>
       </div>
@@ -110,16 +110,16 @@ export default function DraggableTrackList({
             onDragEnd={handleDragEnd}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg group cursor-pointer transition-all ${
               isActive
-                ? 'bg-white/10'
+                ? 'bg-surface-hover'
                 : isDragOver
                   ? 'bg-primary/10 border-t-2 border-primary'
-                  : 'hover:bg-white/5'
+                  : 'hover:bg-surface-hover'
             } ${isDragging ? 'opacity-50' : ''}`}
             onClick={() => onPlayTrack(track)}
           >
             {/* Drag handle */}
             <div className="w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
-              <GripVertical className="w-4 h-4 text-white/30" />
+              <GripVertical className="w-4 h-4 text-fg-muted" />
             </div>
 
             {/* Index / Play indicator */}
@@ -138,10 +138,10 @@ export default function DraggableTrackList({
               ) : isActive ? (
                 <Pause className="w-3 h-3 text-primary" />
               ) : (
-                <span className="text-white/20 group-hover:hidden">{index + 1}</span>
+                <span className="text-fg-muted group-hover:hidden">{index + 1}</span>
               )}
               {!isActive && (
-                <Play className="w-3 h-3 text-white/50 hidden group-hover:block" />
+                <Play className="w-3 h-3 text-fg-secondary hidden group-hover:block" />
               )}
             </div>
 
@@ -149,15 +149,15 @@ export default function DraggableTrackList({
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <CoverArt filePath={track.filePath} size="sm" />
               <div className="min-w-0 flex-1">
-                <div className={`text-sm truncate ${isActive ? 'text-primary font-medium' : 'text-white/80'}`}>
+                <div className={`text-sm truncate ${isActive ? 'text-primary font-medium' : 'text-fg'}`}>
                   {track.title}
                 </div>
-                <div className="text-xs text-white/30 truncate">{track.artist}</div>
+                <div className="text-xs text-fg-muted truncate">{track.artist}</div>
               </div>
             </div>
 
             {/* Duration */}
-            <span className="text-xs text-white/20 w-10 text-right">
+            <span className="text-xs text-fg-muted w-10 text-right">
               {formatDuration(track.duration)}
             </span>
 
@@ -168,7 +168,7 @@ export default function DraggableTrackList({
                   e.stopPropagation()
                   onRemoveTrack(index)
                 }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-white/30 transition-all"
+                className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-fg-muted transition-all"
               >
                 <X className="w-3.5 h-3.5" />
               </button>

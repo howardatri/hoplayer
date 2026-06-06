@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useCoverArt } from './useCoverArt'
 
 interface RGBColor {
@@ -7,6 +7,12 @@ interface RGBColor {
   b: number
 }
 
+// Reuse a single off-screen canvas to avoid repeated GPU resource allocation
+const _sharedCanvas = document.createElement('canvas')
+_sharedCanvas.width = 64
+_sharedCanvas.height = 64
+const _sharedCtx = _sharedCanvas.getContext('2d', { willReadFrequently: true })
+
 /**
  * Extract the dominant color from a cover art image and apply it as a CSS variable.
  * Uses Canvas to sample pixels and find the most vibrant non-dark color.
@@ -14,6 +20,7 @@ interface RGBColor {
 export function useThemeColor(filePath: string | undefined) {
   const { coverUrl } = useCoverArt(filePath)
   const [dominantColor, setDominantColor] = useState<RGBColor | null>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => {
     if (!coverUrl) {
@@ -23,24 +30,40 @@ export function useThemeColor(filePath: string | undefined) {
     }
 
     let cancelled = false
+
+    // Abort previous image load if still in-flight
+    if (imgRef.current) {
+      imgRef.current.onload = null
+      imgRef.current.onerror = null
+      imgRef.current.src = ''
+    }
+
     const img = new Image()
+    imgRef.current = img
     img.crossOrigin = 'anonymous'
 
     img.onload = () => {
-      if (cancelled) return
+      if (cancelled) {
+        // Release image immediately if cancelled
+        img.onload = null
+        img.onerror = null
+        img.src = ''
+        return
+      }
 
-      const canvas = document.createElement('canvas')
-      const size = 64 // Downsample for performance
-      canvas.width = size
-      canvas.height = size
-      const ctx = canvas.getContext('2d')
+      const ctx = _sharedCtx
       if (!ctx) return
 
-      ctx.drawImage(img, 0, 0, size, size)
-      const imageData = ctx.getImageData(0, 0, size, size)
+      ctx.drawImage(img, 0, 0, 64, 64)
+      const imageData = ctx.getImageData(0, 0, 64, 64)
       const pixels = imageData.data
 
-      // Find dominant color using simple clustering
+      // Release image bitmap immediately
+      img.onload = null
+      img.onerror = null
+      img.src = ''
+
+      // Release imageData reference
       const color = extractDominantColor(pixels)
       if (color && !cancelled) {
         setDominantColor(color)
@@ -53,12 +76,21 @@ export function useThemeColor(filePath: string | undefined) {
         resetTheme()
         setDominantColor(null)
       }
+      img.onload = null
+      img.onerror = null
+      img.src = ''
     }
 
     img.src = coverUrl
 
     return () => {
       cancelled = true
+      // Abort image load on cleanup
+      if (imgRef.current) {
+        imgRef.current.onload = null
+        imgRef.current.onerror = null
+        imgRef.current.src = ''
+      }
     }
   }, [coverUrl])
 
@@ -126,16 +158,11 @@ function applyTheme(color: RGBColor) {
   const root = document.documentElement
   const { r, g, b } = color
 
-  // Main primary color
   root.style.setProperty('--color-primary', `rgb(${r}, ${g}, ${b})`)
-
-  // Lighter variant
   root.style.setProperty(
     '--color-primary-light',
     `rgb(${Math.min(255, r + 30)}, ${Math.min(255, g + 30)}, ${Math.min(255, b + 30)})`
   )
-
-  // Darker variant
   root.style.setProperty(
     '--color-primary-dark',
     `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`
@@ -147,7 +174,7 @@ function applyTheme(color: RGBColor) {
  */
 function resetTheme() {
   const root = document.documentElement
-  root.style.setProperty('--color-primary', '#6366f1')
-  root.style.setProperty('--color-primary-light', '#818cf8')
-  root.style.setProperty('--color-primary-dark', '#4f46e5')
+  root.style.setProperty('--color-primary', '#7c5bf5')
+  root.style.setProperty('--color-primary-light', '#9b82f8')
+  root.style.setProperty('--color-primary-dark', '#5e3dd7')
 }

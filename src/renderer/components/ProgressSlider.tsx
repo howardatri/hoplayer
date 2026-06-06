@@ -81,7 +81,7 @@ export default function ProgressSlider({ progress, onSeek }: ProgressSliderProps
         top: '50%',
         transform: 'translateY(-50%)',
         height: 4,
-        background: 'rgba(255,255,255,0.1)',
+        background: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
         borderRadius: 2
       }} />
 
@@ -93,7 +93,7 @@ export default function ProgressSlider({ progress, onSeek }: ProgressSliderProps
         transform: 'translateY(-50%)',
         width: `${displayValue * 100}%`,
         height: 4,
-        background: 'var(--color-primary, #6366f1)',
+        background: 'linear-gradient(90deg, var(--color-primary, #7c5bf5), var(--color-accent, #f570a5))',
         borderRadius: 2,
         transition: isDragging ? 'none' : 'width 0.1s linear'
       }} />
@@ -108,7 +108,7 @@ export default function ProgressSlider({ progress, onSeek }: ProgressSliderProps
         height: isDragging ? 14 : 12,
         borderRadius: '50%',
         background: 'white',
-        boxShadow: '0 0 4px rgba(0,0,0,0.3)',
+        boxShadow: '0 0 8px color-mix(in srgb, var(--color-primary) 50%, transparent)',
         opacity: thumbVisible ? 1 : 0,
         transition: isDragging ? 'none' : 'opacity 0.15s',
         pointerEvents: 'none'

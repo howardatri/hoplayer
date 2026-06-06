@@ -12,8 +12,8 @@ interface CoverArtProps {
 const sizeMap = {
   sm: 'w-10 h-10',
   md: 'w-14 h-14',
-  lg: 'w-48 h-48',
-  xl: 'w-64 h-64'
+  lg: 'aspect-square',
+  xl: 'aspect-square'
 }
 
 const iconSizeMap = {
@@ -51,34 +51,35 @@ export default function CoverArt({
               : { duration: 0.5, ease: 'easeOut' }
           }
         >
-          {/* Vinyl grooves */}
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-neutral-800 to-neutral-900">
+          {/* Vinyl body — always dark regardless of theme */}
+          <div className="absolute inset-0 rounded-full" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0d0d1a)' }}>
             {[0.2, 0.35, 0.5, 0.65, 0.8].map((ratio) => (
               <div
                 key={ratio}
-                className="absolute rounded-full border border-white/5"
+                className="absolute rounded-full"
                 style={{
-                  inset: `${(1 - ratio) * 50}%`
+                  inset: `${(1 - ratio) * 50}%`,
+                  border: '1px solid rgba(255,255,255,0.06)'
                 }}
               />
             ))}
           </div>
           {/* Center label area */}
           <div
-            className="absolute rounded-full bg-neutral-700"
-            style={{ width: '30%', height: '30%' }}
+            className="absolute rounded-full"
+            style={{ width: '30%', height: '30%', background: 'linear-gradient(135deg, #2a2a3e, #1a1a2e)' }}
           />
           {/* Center hole */}
           <div
-            className="absolute rounded-full bg-[#0f0f14]"
-            style={{ width: '8%', height: '8%' }}
+            className="absolute rounded-full"
+            style={{ width: '8%', height: '8%', background: '#0a0a12' }}
           />
         </motion.div>
       )}
 
       {/* Cover image */}
       <motion.div
-        className={`${isLarge ? 'absolute' : ''} inset-0 rounded-lg overflow-hidden bg-white/5 ${
+        className={`${isLarge ? 'absolute' : ''} inset-0 rounded-lg overflow-hidden bg-surface ${
           isLarge ? 'rounded-full' : ''
         }`}
         style={isLarge ? { margin: '12%' } : undefined}
@@ -107,9 +108,9 @@ export default function CoverArt({
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             {size === 'sm' || size === 'md' ? (
-              <Music className={`${iconSizeMap[size]} text-white/20`} />
+              <Music className={`${iconSizeMap[size]} text-fg-muted`} />
             ) : (
-              <Disc3 className={`${iconSizeMap[size]} text-white/10`} />
+              <Disc3 className={`${iconSizeMap[size]} text-fg-muted`} />
             )}
           </div>
         )}

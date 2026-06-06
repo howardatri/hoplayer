@@ -107,8 +107,8 @@ export default function KeyHint() {
           <div className="flex items-center gap-3 px-5 py-3 rounded-xl glass-strong shadow-2xl">
             <div className="text-primary">{activeAction.icon}</div>
             <div>
-              <div className="text-sm font-semibold text-white">{activeAction.label}</div>
-              <div className="text-xs text-white/40">{activeAction.key}</div>
+              <div className="text-sm font-semibold text-fg">{activeAction.label}</div>
+              <div className="text-xs text-fg-muted">{activeAction.key}</div>
             </div>
           </div>
         </motion.div>

@@ -58,7 +58,7 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
 
   if (!playlist) {
     return (
-      <div className="flex-1 flex items-center justify-center text-white/30">
+      <div className="flex-1 flex items-center justify-center text-fg-muted">
         <p>Playlist not found</p>
       </div>
     )
@@ -75,9 +75,9 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-white/30 uppercase tracking-wider mb-1">Playlist</p>
-            <h1 className="text-3xl font-bold text-white mb-2 truncate">{playlist.name}</h1>
-            <p className="text-sm text-white/40 mb-4">
+            <p className="text-xs text-fg-muted uppercase tracking-wider mb-1">Playlist</p>
+            <h1 className="text-3xl font-bold text-fg mb-2 truncate">{playlist.name}</h1>
+            <p className="text-sm text-fg-muted mb-4">
               {playlistTracks.length} tracks
             </p>
 
@@ -87,7 +87,7 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
                 whileTap={{ scale: 0.98 }}
                 onClick={handlePlayAll}
                 disabled={playlistTracks.length === 0}
-                className="flex items-center gap-2 px-6 py-2 bg-primary rounded-full text-white text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-2 bg-primary rounded-full text-fg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
               >
                 <Play className="w-4 h-4" fill="currentColor" />
                 Play All
@@ -101,7 +101,7 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
                     deletePlaylist(playlistId)
                   }
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-red-500/20 rounded-full text-sm text-white/50 hover:text-red-400 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-red-500/20 rounded-full text-sm text-fg-secondary hover:text-red-400 transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -114,10 +114,10 @@ export default function PlaylistPage({ playlistId }: PlaylistPageProps) {
       {/* Track list with drag-to-reorder */}
       <div className="flex-1 overflow-y-auto px-4">
         {playlistTracks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-white/30">
+          <div className="flex flex-col items-center justify-center h-full text-fg-muted">
             <Music className="w-12 h-12 mb-3 opacity-30" />
             <p className="text-sm">This playlist is empty</p>
-            <p className="text-xs text-white/20 mt-1">
+            <p className="text-xs text-fg-muted mt-1">
               Add tracks from the library
             </p>
           </div>

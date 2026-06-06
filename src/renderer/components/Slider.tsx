@@ -21,7 +21,7 @@ export default function Slider({
   value,
   onChange,
   onCommit,
-  color = 'var(--color-primary, #6366f1)',
+  color = 'var(--color-primary, #7c5bf5)',
   trackHeight = 4,
   thumbSize = 12,
   showThumb = false,
@@ -92,7 +92,7 @@ export default function Slider({
         top: '50%',
         transform: 'translateY(-50%)',
         height: trackHeight,
-        background: 'rgba(255,255,255,0.1)',
+        background: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
         borderRadius: trackHeight / 2
       }} />
 

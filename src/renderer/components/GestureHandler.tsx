@@ -127,14 +127,14 @@ export default function GestureHandler({
           >
             <div className="flex flex-col items-center gap-2 px-6 py-4 rounded-2xl bg-black/60 backdrop-blur-md">
               {gestureHint.type === 'volume' ? (
-                <Volume2 className="w-8 h-8 text-white" />
+                <Volume2 className="w-8 h-8 text-fg" />
               ) : gestureHint.direction === 'right' ? (
-                <FastForward className="w-8 h-8 text-white" />
+                <FastForward className="w-8 h-8 text-fg" />
               ) : (
-                <Rewind className="w-8 h-8 text-white" />
+                <Rewind className="w-8 h-8 text-fg" />
               )}
-              <span className="text-2xl font-bold text-white">{gestureHint.value}</span>
-              <span className="text-xs text-white/50 capitalize">
+              <span className="text-2xl font-bold text-fg">{gestureHint.value}</span>
+              <span className="text-xs text-fg-secondary capitalize">
                 {gestureHint.type} {gestureHint.direction}
               </span>
             </div>
