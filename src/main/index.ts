@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net, globalShortcut } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net, globalShortcut, nativeImage } from 'electron'
 import { join, extname } from 'path'
 import { readFile, stat as fsStat, open as fsOpen } from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
@@ -22,6 +22,86 @@ let isMiniMode = false
 let minimizeToTray = true
 let forceQuit = false
 let normalBounds: Electron.Rectangle | null = null
+let thumbarIsPlaying = false
+
+// ---- Taskbar thumbnail buttons ----
+function createThumbarIcon(pathData: string): Electron.NativeImage {
+  // Create a simple 16x16 icon from a path-like description
+  const size = 16
+  const buf = Buffer.alloc(size * size * 4, 0)
+
+  const setPixel = (x: number, y: number) => {
+    if (x < 0 || x >= size || y < 0 || y >= size) return
+    const idx = (y * size + x) * 4
+    buf[idx] = 200; buf[idx + 1] = 200; buf[idx + 2] = 200; buf[idx + 3] = 255
+  }
+
+  const fillRect = (x: number, y: number, w: number, h: number) => {
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) setPixel(x + dx, y + dy)
+  }
+
+  // Draw icons based on pathData name
+  if (pathData === 'prev') {
+    // |< shape
+    fillRect(3, 3, 2, 10)
+    fillRect(5, 4, 2, 8)
+    fillRect(7, 5, 2, 6)
+    fillRect(9, 6, 2, 4)
+    fillRect(11, 7, 2, 2)
+  } else if (pathData === 'play') {
+    // triangle
+    for (let i = 0; i < 10; i++) {
+      const w = Math.max(1, Math.round((i / 9) * 6))
+      fillRect(5 + Math.floor((10 - i) / 2), 3 + i, w, 1)
+    }
+  } else if (pathData === 'pause') {
+    // two bars
+    fillRect(4, 3, 3, 10)
+    fillRect(9, 3, 3, 10)
+  } else if (pathData === 'next') {
+    // >| shape
+    fillRect(3, 7, 2, 2)
+    fillRect(5, 6, 2, 4)
+    fillRect(7, 5, 2, 6)
+    fillRect(9, 4, 2, 8)
+    fillRect(11, 3, 2, 10)
+  }
+
+  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+}
+
+function setupThumbarButtons(win: BrowserWindow | null) {
+  if (!win) return
+  const prevIcon = createThumbarIcon('prev')
+  const playIcon = createThumbarIcon('play')
+  const pauseIcon = createThumbarIcon('pause')
+  const nextIcon = createThumbarIcon('next')
+
+  const buttons: Electron.ThumbarButton[] = [
+    { icon: prevIcon, tooltip: 'Previous', click: () => { win.webContents.send('media-previous') } },
+    { icon: playIcon, tooltip: 'Play', click: () => { win.webContents.send('media-play-pause') } },
+    { icon: nextIcon, tooltip: 'Next', click: () => { win.webContents.send('media-next') } }
+  ]
+
+  win.setThumbarButtons(buttons)
+  // Store icon refs for updates
+  ;(win as any).__thumbarIcons = { prevIcon, playIcon, pauseIcon, nextIcon }
+}
+
+function updateThumbarPlayingState(isPlaying: boolean) {
+  if (!mainWindow || thumbarIsPlaying === isPlaying) return
+  thumbarIsPlaying = isPlaying
+  const icons = (mainWindow as any).__thumbarIcons
+  if (!icons) return
+
+  const buttons: Electron.ThumbarButton[] = [
+    { icon: icons.prevIcon, tooltip: 'Previous', click: () => { mainWindow?.webContents.send('media-previous') } },
+    { icon: isPlaying ? icons.pauseIcon : icons.playIcon, tooltip: isPlaying ? 'Pause' : 'Play', click: () => { mainWindow?.webContents.send('media-play-pause') } },
+    { icon: icons.nextIcon, tooltip: 'Next', click: () => { mainWindow?.webContents.send('media-next') } }
+  ]
+
+  try { mainWindow.setThumbarButtons(buttons) } catch { /* window might be destroyed */ }
+}
 
 const MIME_MAP: Record<string, string> = {
   '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
@@ -63,6 +143,7 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+    setupThumbarButtons(mainWindow)
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -191,9 +272,10 @@ function registerIPC(): void {
     mainWindow.webContents.send('mini-mode-changed', isMiniMode)
   })
 
-  // Tray info update
+  // Tray info update + thumbar sync
   ipcMain.on('update-tray-info', (_event, title: string, artist: string, isPlaying: boolean) => {
     updateTrayMenu(title, artist, isPlaying)
+    updateThumbarPlayingState(isPlaying)
   })
 
   // Minimize to tray setting

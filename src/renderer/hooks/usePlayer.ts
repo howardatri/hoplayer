@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react'
 import usePlayerStore from '@/store/playerStore'
+import useSettingsStore from '@/store/settingsStore'
 import type { Track } from '@shared/index'
 
 // =============================================
@@ -18,6 +19,11 @@ let gainNodes: [GainNode, GainNode] | null = null
 let webAudioReady = false
 
 const EQ_FREQUENCIES = [60, 230, 910, 3600, 14000]
+
+// Track whether EQ is bypassed (all bands at 0)
+let eqBypassed = true
+// Store source nodes so we can reconnect when toggling bypass
+let sourceNodes: [MediaElementAudioSourceNode, MediaElementAudioSourceNode] | null = null
 
 function ensureWebAudio() {
   if (webAudioReady) {
@@ -40,8 +46,10 @@ function ensureWebAudio() {
     // audio[0] -> source[0] -> eq[0] -> gain[0] --\
     //                                                analyser -> destination
     // audio[1] -> source[1] -> eq[1] -> gain[1] --/
+    const sources: MediaElementAudioSourceNode[] = []
     for (let i = 0; i < 2; i++) {
       const sourceNode = audioContext.createMediaElementSource(audio[i])
+      sources.push(sourceNode)
       const filters = EQ_FREQUENCIES.map((freq) => {
         const filter = audioContext!.createBiquadFilter()
         filter.type = 'peaking'
@@ -52,18 +60,18 @@ function ensureWebAudio() {
       })
       eqFilters[i] = filters
 
-      let current: AudioNode = sourceNode
-      for (const f of filters) {
-        current.connect(f)
-        current = f
-      }
-      current.connect(gainNodes[i])
+      // Default: bypass EQ (source -> gain directly)
+      sourceNode.connect(gainNodes[i])
       gainNodes[i].connect(analyserNode)
     }
+    sourceNodes = sources as [MediaElementAudioSourceNode, MediaElementAudioSourceNode]
 
-    // Apply current store EQ bands to both chains
+    // Apply current store EQ bands — if any non-zero, enable EQ chain
     const bands = usePlayerStore.getState().eqBands
     eqFilters.forEach(chain => chain.forEach((f, i) => { f.gain.value = bands[i] ?? 0 }))
+    if (bands.some(g => g !== 0)) {
+      enableEqChain()
+    }
 
     // Resume context if suspended (autoplay policy)
     if (audioContext.state === 'suspended') audioContext.resume()
@@ -72,6 +80,34 @@ function ensureWebAudio() {
   } catch (e) {
     console.warn('[webAudio] setup failed:', e)
   }
+}
+
+/** Route audio through the EQ filter chain (when any band is non-zero) */
+function enableEqChain() {
+  if (!audioContext || !sourceNodes || !gainNodes || !eqBypassed) return
+  for (let i = 0; i < 2; i++) {
+    sourceNodes[i].disconnect()
+    let current: AudioNode = sourceNodes[i]
+    for (const f of eqFilters[i]) {
+      current.connect(f)
+      current = f
+    }
+    current.connect(gainNodes[i])
+  }
+  eqBypassed = false
+}
+
+/** Bypass EQ filter chain (when all bands are 0) — saves CPU */
+function disableEqChain() {
+  if (!audioContext || !sourceNodes || !gainNodes || eqBypassed) return
+  for (let i = 0; i < 2; i++) {
+    // Disconnect the EQ chain
+    sourceNodes[i].disconnect()
+    for (const f of eqFilters[i]) f.disconnect()
+    // Reconnect source -> gain directly
+    sourceNodes[i].connect(gainNodes[i])
+  }
+  eqBypassed = true
 }
 
 // Resume AudioContext when window becomes visible again (e.g. restored from minimize)
@@ -91,6 +127,9 @@ export function setEqBand(index: number, gain: number) {
   ensureWebAudio() // ensure pipeline exists before touching filters
   const clamped = Math.max(-12, Math.min(12, gain))
   eqFilters.forEach(chain => { if (chain[index]) chain[index].gain.value = clamped })
+  // Toggle EQ chain based on whether any band is non-zero
+  const allZero = eqFilters[0].every(f => f.gain.value === 0)
+  if (allZero) disableEqChain(); else enableEqChain()
 }
 
 export function setEqBands(gains: number[]) {
@@ -99,6 +138,9 @@ export function setEqBands(gains: number[]) {
     const clamped = Math.max(-12, Math.min(12, g))
     eqFilters.forEach(chain => { if (chain[i]) chain[i].gain.value = clamped })
   })
+  // Toggle EQ chain based on whether any band is non-zero
+  const allZero = eqFilters[0].every(f => f.gain.value === 0)
+  if (allZero) disableEqChain(); else enableEqChain()
 }
 
 // ---- Load counter to ignore stale operations ----
@@ -183,7 +225,7 @@ function startCrossfade() {
 
   // Load next track
   nextAudio.src = getLocalUrl(nextTrack.filePath)
-  nextAudio.volume = 1
+  nextAudio.volume = store.volume
   nextAudio.playbackRate = store.playbackSpeed
   nextAudio.load()
 
@@ -209,9 +251,10 @@ function startCrossfade() {
       if (t < 1) {
         _crossfadeGainTimer = requestAnimationFrame(animate)
       } else {
-        // Crossfade complete — stop old audio
+        // Crossfade complete — stop old audio and release its buffer
         currentAudio.pause()
-        currentAudio.currentTime = 0
+        currentAudio.removeAttribute('src')
+        currentAudio.load()
         currentGain.gain.setValueAtTime(0, audioContext!.currentTime)
         nextGain.gain.setValueAtTime(1, audioContext!.currentTime)
 
@@ -252,7 +295,7 @@ function schedulePreload() {
 
   const nextAudio = audio[nextIdx]
   nextAudio.src = getLocalUrl(nextTrack.filePath)
-  nextAudio.volume = 1
+  nextAudio.volume = store.volume
   nextAudio.playbackRate = store.playbackSpeed
   nextAudio.load()
   preloadCache.set(cacheKey, { idx: nextIdx, loadId })
@@ -274,6 +317,9 @@ async function loadAndPlay(track: Track, shouldPlay: boolean) {
   }
 
   usePlayerStore.getState().setCurrentTrack(track)
+
+  // Show system notification (only when window not focused)
+  if (shouldPlay) showTrackNotification(track)
 
   if (!shouldPlay) {
     usePlayerStore.getState().setIsPlaying(false)
@@ -298,8 +344,14 @@ async function loadAndPlay(track: Track, shouldPlay: boolean) {
   // Stream via local:// protocol (supports range requests for instant seeking)
   audio[idx].src = getLocalUrl(track.filePath)
   audio[idx].playbackRate = usePlayerStore.getState().playbackSpeed
-  audio[idx].volume = 1
+  audio[idx].volume = usePlayerStore.getState().volume
   audio[idx].load()
+
+  // Apply output device if user selected a non-default one
+  const deviceId = useSettingsStore.getState().audioOutputDeviceId
+  if (deviceId) {
+    (audio[idx] as any).setSinkId(deviceId).catch(() => {})
+  }
 
   const onCanPlay = () => {
     audio[idx].removeEventListener('canplay', onCanPlay)
@@ -325,11 +377,19 @@ async function loadAndPlay(track: Track, shouldPlay: boolean) {
   }
 }
 
+// ---- Throttled timeupdate to reduce re-render frequency ----
+let _lastTimeUpdate = 0
+const TIME_UPDATE_INTERVAL = 500 // 2x per second instead of 4x
+
 // ---- Wire up audio events for BOTH elements ----
 for (let i = 0; i < 2; i++) {
   audio[i].addEventListener('timeupdate', () => {
     if (i !== activeIdx) return
     if (_isSeeking) return
+    // Throttle store updates to reduce re-renders
+    const now = performance.now()
+    if (now - _lastTimeUpdate < TIME_UPDATE_INTERVAL) return
+    _lastTimeUpdate = now
     if (audio[i].duration && isFinite(audio[i].duration)) {
       usePlayerStore.getState().setCurrentTime(audio[i].currentTime)
       usePlayerStore.getState().setProgress(audio[i].currentTime / audio[i].duration)
@@ -377,8 +437,15 @@ for (let i = 0; i < 2; i++) {
 export function doPlayNext() {
   cancelCrossfade()
   clearInactiveAudio() // release preloaded media buffer
+  const prevIndex = usePlayerStore.getState().currentIndex
   usePlayerStore.getState().playNext()
-  const { currentTrack } = usePlayerStore.getState()
+  const { currentTrack, currentIndex } = usePlayerStore.getState()
+  // If playNext didn't advance (repeat off, at end of queue), stop playback
+  if (currentIndex === prevIndex && usePlayerStore.getState().repeatMode !== 'one') {
+    audio[activeIdx].pause()
+    usePlayerStore.getState().setIsPlaying(false)
+    return
+  }
   if (currentTrack) loadAndPlay(currentTrack, true)
 }
 
@@ -405,6 +472,47 @@ let _controls: {
 } | null = null
 
 export function getPlayerControls() { return _controls }
+
+// ---- Output device selection (setSinkId) ----
+export async function getAudioOutputDevices(): Promise<MediaDeviceInfo[]> {
+  // Request permission first (needed to get device labels)
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()))
+  } catch { /* permission denied or not available — still return devices without labels */ }
+  const devices = await navigator.mediaDevices.enumerateDevices()
+  return devices.filter(d => d.kind === 'audiooutput')
+}
+
+export async function setAudioOutputDevice(deviceId: string): Promise<boolean> {
+  try {
+    // setSinkId works on HTMLAudioElement in Chromium
+    await (audio[activeIdx] as any).setSinkId(deviceId)
+    // Also set on the inactive element for crossfade
+    await (audio[1 - activeIdx] as any).setSinkId(deviceId)
+    return true
+  } catch (e) {
+    console.warn('[audio] setSinkId failed:', e)
+    return false
+  }
+}
+
+// ---- System notification on track change ----
+let _lastNotifiedPath = ''
+function showTrackNotification(track: Track) {
+  if (!useSettingsStore.getState().enableNotifications) return
+  if (track.filePath === _lastNotifiedPath) return // same track, skip
+  _lastNotifiedPath = track.filePath
+
+  // Only notify when window is not focused
+  if (typeof document !== 'undefined' && document.hasFocus()) return
+
+  try {
+    new Notification(track.title, {
+      body: track.artist + (track.album !== 'Unknown Album' ? ` · ${track.album}` : ''),
+      silent: true
+    })
+  } catch { /* Notification API not available */ }
+}
 
 // =============================================
 // Hook
@@ -501,7 +609,9 @@ export function usePlayer() {
 
   useEffect(() => {
     _controls = { togglePlay, playNext, playPrev, setVolume, seek, playTrack }
-    return () => { _controls = null }
+    // No cleanup: multiple components call usePlayer() (App, PlayerBar, pages).
+    // Cleanup from unmounting children would null _controls while App's effect
+    // is still alive but won't re-run (stable deps), breaking tray/mini-player.
   }, [togglePlay, playNext, playPrev, setVolume, seek, playTrack])
 
   return { playTrack, togglePlay, seek, setVolume, playNext, playPrev }

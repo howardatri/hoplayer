@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Play, Trash2, ListMusic } from 'lucide-react'
 import CoverArt from './CoverArt'
 import usePlayerStore from '@/store/playerStore'
+import { getPlayerControls } from '@/hooks/usePlayer'
 import type { Track } from '@shared/index'
 
 interface QueuePanelProps {
@@ -20,15 +21,11 @@ export default function QueuePanel({ isOpen, onClose }: QueuePanelProps) {
   const queue = usePlayerStore((s) => s.queue)
   const currentIndex = usePlayerStore((s) => s.currentIndex)
   const currentTrack = usePlayerStore((s) => s.currentTrack)
-  const isPlaying = usePlayerStore((s) => s.isPlaying)
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue)
-  const setIsPlaying = usePlayerStore((s) => s.setIsPlaying)
-  const setCurrentTrack = usePlayerStore((s) => s.setCurrentTrack)
 
   const handlePlayTrack = (track: Track, index: number) => {
-    setCurrentTrack(track)
     usePlayerStore.setState({ currentIndex: index })
-    setIsPlaying(true)
+    getPlayerControls()?.playTrack(track)
   }
 
   // Split queue into "now playing" + "next up"
@@ -45,7 +42,7 @@ export default function QueuePanel({ isOpen, onClose }: QueuePanelProps) {
           style={{
             width: 320, height: '100%', flexShrink: 0,
             background: 'color-mix(in srgb, var(--color-bg) 95%, transparent)',
-            backdropFilter: 'blur(40px)',
+            backdropFilter: 'blur(12px)',
             borderLeft: '1px solid var(--color-border)',
             display: 'flex', flexDirection: 'column', overflow: 'hidden'
           }}

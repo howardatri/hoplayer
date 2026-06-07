@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
-import { FolderOpen, Trash2, Plus, Volume2, Keyboard, Info, RefreshCw, Palette, Minimize2 } from 'lucide-react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { FolderOpen, Trash2, Plus, Volume2, Keyboard, Info, RefreshCw, Palette, Minimize2, Bell, Headphones } from 'lucide-react'
 import { useLibrary } from '@/hooks/useLibrary'
+import { getAudioOutputDevices, setAudioOutputDevice } from '@/hooks/usePlayer'
 import usePlayerStore from '@/store/playerStore'
 import useSettingsStore from '@/store/settingsStore'
 import { groupTracksByFolder } from '@/utils/paths'
@@ -16,7 +17,25 @@ export default function SettingsPage() {
   const setThemeId = useSettingsStore(s => s.setThemeId)
   const minimizeToTray = useSettingsStore(s => s.minimizeToTray)
   const setMinimizeToTray = useSettingsStore(s => s.setMinimizeToTray)
+  const enableNotifications = useSettingsStore(s => s.enableNotifications)
+  const setEnableNotifications = useSettingsStore(s => s.setEnableNotifications)
+  const audioOutputDeviceId = useSettingsStore(s => s.audioOutputDeviceId)
+  const setAudioOutputDeviceId = useSettingsStore(s => s.setAudioOutputDeviceId)
   const [scanning, setScanning] = useState<string | null>(null)
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
+
+  // Enumerate audio output devices
+  const refreshDevices = useCallback(async () => {
+    const devices = await getAudioOutputDevices()
+    setAudioDevices(devices)
+  }, [])
+
+  useEffect(() => { refreshDevices() }, [refreshDevices])
+
+  const handleOutputDeviceChange = useCallback(async (deviceId: string) => {
+    setAudioOutputDeviceId(deviceId)
+    await setAudioOutputDevice(deviceId)
+  }, [setAudioOutputDeviceId])
 
   const folderTrackCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -98,30 +117,58 @@ export default function SettingsPage() {
 
         {/* Behavior */}
         <Section icon={<Minimize2 size={18} />} title="Behavior">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>最小化到托盘</div>
-              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>Close button hides to system tray instead of quitting</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>最小化到托盘</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>Close button hides to system tray instead of quitting</div>
+              </div>
+              <ToggleSwitch value={minimizeToTray} onChange={(v) => { setMinimizeToTray(v); window.electronAPI.setMinimizeToTray(v) }} />
             </div>
-            <button
-              onClick={() => {
-                const next = !minimizeToTray
-                setMinimizeToTray(next)
-                window.electronAPI.setMinimizeToTray(next)
-              }}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>切歌通知</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>Show notification when track changes (window not focused)</div>
+              </div>
+              <ToggleSwitch value={enableNotifications} onChange={setEnableNotifications} />
+            </div>
+          </div>
+        </Section>
+
+        {/* Output Device */}
+        <Section icon={<Headphones size={18} />} title="Output Device">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <select
+              value={audioOutputDeviceId}
+              onChange={e => handleOutputDeviceChange(e.target.value)}
               style={{
-                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
-                background: minimizeToTray ? 'var(--color-primary)' : 'var(--color-border)',
-                position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 13,
+                background: 'var(--color-bg)', color: 'var(--color-text)',
+                border: '1px solid var(--color-border)', cursor: 'pointer',
               }}
             >
-              <div style={{
-                width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                position: 'absolute', top: 3, left: minimizeToTray ? 23 : 3,
-                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-              }} />
+              <option value="">Default</option>
+              {audioDevices.map(d => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Device ${d.deviceId.slice(0, 8)}`}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={refreshDevices}
+              title="Refresh devices"
+              style={{
+                background: 'none', border: '1px solid var(--color-border)', borderRadius: 8,
+                padding: '8px 10px', cursor: 'pointer', color: 'var(--color-text-muted)',
+                display: 'flex', alignItems: 'center',
+              }}
+            >
+              <RefreshCw size={14} />
             </button>
           </div>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8 }}>
+            Select audio output device (speakers, headphones, USB DAC, etc.)
+          </p>
         </Section>
 
         {/* Music Folders */}
@@ -274,5 +321,24 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
         {children}
       </div>
     </div>
+  )
+}
+
+function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      style={{
+        width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
+        background: value ? 'var(--color-primary)' : 'var(--color-border)',
+        position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+      }}
+    >
+      <div style={{
+        width: 18, height: 18, borderRadius: '50%', background: '#fff',
+        position: 'absolute', top: 3, left: value ? 23 : 3,
+        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+      }} />
+    </button>
   )
 }

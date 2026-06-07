@@ -42,7 +42,6 @@ function createTrayIcon(): Electron.NativeImage {
 }
 
 function buildContextMenu(): Electron.Menu {
-  const win = getWindowFn?.()
   const nowPlayingLabel = currentTitle
     ? `${currentTitle} - ${currentArtist}`
     : 'No track playing'
@@ -55,25 +54,26 @@ function buildContextMenu(): Electron.Menu {
     {
       label: currentIsPlaying ? 'Pause' : 'Play',
       click: () => {
-        win?.webContents.send('tray-play-pause')
+        getWindowFn?.()?.webContents.send('tray-play-pause')
       }
     },
     {
       label: 'Previous',
       click: () => {
-        win?.webContents.send('tray-prev')
+        getWindowFn?.()?.webContents.send('tray-prev')
       }
     },
     {
       label: 'Next',
       click: () => {
-        win?.webContents.send('tray-next')
+        getWindowFn?.()?.webContents.send('tray-next')
       }
     },
     { type: 'separator' },
     {
       label: 'Show Window',
       click: () => {
+        const win = getWindowFn?.()
         if (win) {
           win.show()
           win.focus()

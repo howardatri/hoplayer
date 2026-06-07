@@ -105,8 +105,8 @@ button:not(:disabled):active {
 
 .glass-strong {
   background: var(--color-surface-hover);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--color-border);
 }
 
