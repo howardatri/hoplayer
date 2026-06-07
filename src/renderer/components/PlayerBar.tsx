@@ -88,8 +88,8 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen, onToggleQueue, q
   return (
     <div data-player-bar style={{
       height: 80, flexShrink: 0,
-      background: 'color-mix(in srgb, var(--color-bg) 85%, transparent)',
-      backdropFilter: 'blur(40px)',
+      background: 'color-mix(in srgb, var(--color-bg) 90%, transparent)',
+      backdropFilter: 'blur(12px)',
       borderTop: '1px solid var(--color-border)',
       display: 'flex', flexDirection: 'column', zIndex: 50
     }}>
@@ -215,7 +215,7 @@ export default function PlayerBar({ onToggleLyrics, lyricsOpen, onToggleQueue, q
               )}
             </button>
           </div>
-          <AudioSpectrum width={120} height={16} style="bars" />
+          {/* <AudioSpectrum width={120} height={16} style="bars" /> */}
         </div>
 
         {/* Right: volume + extras */}

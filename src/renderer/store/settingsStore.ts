@@ -8,6 +8,8 @@ interface SettingsStore {
 
   // Behavior
   minimizeToTray: boolean
+  enableNotifications: boolean
+  audioOutputDeviceId: string // '' = default device
 
   // Audio preferences
   volume: number
@@ -28,6 +30,8 @@ interface SettingsStore {
   setRepeatMode: (mode: RepeatMode) => void
   setIsShuffle: (v: boolean) => void
   setMinimizeToTray: (v: boolean) => void
+  setEnableNotifications: (v: boolean) => void
+  setAudioOutputDeviceId: (id: string) => void
 }
 
 const useSettingsStore = create<SettingsStore>()(
@@ -35,6 +39,8 @@ const useSettingsStore = create<SettingsStore>()(
     (set) => ({
       themeId: 'aurora',
       minimizeToTray: true,
+      enableNotifications: true,
+      audioOutputDeviceId: '',
       volume: 0.8,
       crossfadeDuration: 0,
       playbackSpeed: 1.0,
@@ -52,6 +58,8 @@ const useSettingsStore = create<SettingsStore>()(
       setRepeatMode: (mode) => set({ repeatMode: mode }),
       setIsShuffle: (v) => set({ isShuffle: v }),
       setMinimizeToTray: (v) => set({ minimizeToTray: v }),
+      setEnableNotifications: (v) => set({ enableNotifications: v }),
+      setAudioOutputDeviceId: (id) => set({ audioOutputDeviceId: id }),
     }),
     {
       name: 'hoplayer-settings',

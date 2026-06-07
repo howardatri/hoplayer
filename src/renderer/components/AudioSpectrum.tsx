@@ -1,13 +1,22 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect } from 'react'
 import { getAnalyserNode } from '@/hooks/usePlayer'
 import usePlayerStore from '@/store/playerStore'
 
 const getComputedPrimary = () => getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#7c5bf5'
 
+// Throttle spectrum to 30fps to halve CPU usage
+const FRAME_INTERVAL = 1000 / 30
+
 function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
+  // Handle both hex (#rrggbb) and rgb(r, g, b) formats
+  if (hex.startsWith('rgb(')) {
+    const nums = hex.slice(4, -1)
+    return `rgba(${nums}, ${alpha})`
+  }
+  const h = hex.startsWith('#') ? hex : `#${hex}`
+  const r = parseInt(h.slice(1, 3), 16)
+  const g = parseInt(h.slice(3, 5), 16)
+  const b = parseInt(h.slice(5, 7), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
@@ -29,86 +38,100 @@ export default function AudioSpectrum({
   style = 'bars'
 }: AudioSpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const animationRef = useRef<number>(0)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
+  const styleRef = useRef(style)
+  styleRef.current = style
 
   // Reuse buffers across frames to reduce GC pressure
   const dataArrayRef = useRef<Uint8Array | null>(null)
   const cachedPrimaryRef = useRef<string>('')
-  const cachedPrimaryRgbaRef = useRef<string>('')
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+  // Stable animation loop — doesn't recreate when style/isPlaying change
+  const lastFrameTime = useRef(0)
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const analyser = getAnalyserNode()
-    if (!analyser) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawIdleBars(ctx, canvas.width, canvas.height)
-      if (isPlaying) {
-        animationRef.current = requestAnimationFrame(draw)
+  useEffect(() => {
+    if (!isPlaying) {
+      // Draw idle state
+      const canvas = canvasRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          drawIdleBars(ctx, canvas.width, canvas.height)
+        }
       }
       return
     }
 
-    // Reuse Uint8Array buffer instead of allocating every frame
-    const bufferLength = analyser.frequencyBinCount
-    if (!dataArrayRef.current || dataArrayRef.current.length !== bufferLength) {
-      dataArrayRef.current = new Uint8Array(bufferLength)
-    }
-    analyser.getByteFrequencyData(dataArrayRef.current)
+    let rafId = 0
+    let stopped = false
 
-    // Cache primary color - only recompute when it changes
-    const primary = getComputedPrimary()
-    if (primary !== cachedPrimaryRef.current) {
-      cachedPrimaryRef.current = primary
-      cachedPrimaryRgbaRef.current = primary.startsWith('#')
-        ? primary
-        : `#${primary}`
-    }
+    const loop = (now: number) => {
+      if (stopped) return
+      rafId = requestAnimationFrame(loop)
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+      // Throttle to ~30fps
+      if (now - lastFrameTime.current < FRAME_INTERVAL) return
+      lastFrameTime.current = now
 
-    switch (style) {
-      case 'bars':
-        drawBars(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRgbaRef.current)
-        break
-      case 'wave':
-        drawWave(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRgbaRef.current)
-        break
-      case 'circular':
-        drawCircular(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRgbaRef.current)
-        break
-    }
+      // Skip drawing when tab is hidden
+      if (document.hidden) return
 
-    if (isPlaying) {
-      animationRef.current = requestAnimationFrame(draw)
-    }
-  }, [isPlaying, style])
-
-  useEffect(() => {
-    if (isPlaying) {
-      animationRef.current = requestAnimationFrame(draw)
-    }
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
-      }
-    }
-  }, [isPlaying, draw])
-
-  // Draw idle state when not playing
-  useEffect(() => {
-    if (!isPlaying) {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')
       if (!ctx) return
+
+      const analyser = getAnalyserNode()
+      if (!analyser) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        drawIdleBars(ctx, canvas.width, canvas.height)
+        return
+      }
+
+      // Reuse Uint8Array buffer
+      const bufferLength = analyser.frequencyBinCount
+      if (!dataArrayRef.current || dataArrayRef.current.length !== bufferLength) {
+        dataArrayRef.current = new Uint8Array(bufferLength)
+      }
+      analyser.getByteFrequencyData(dataArrayRef.current)
+
+      // Cache primary color
+      const primary = getComputedPrimary()
+      if (primary !== cachedPrimaryRef.current) {
+        cachedPrimaryRef.current = primary
+      }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawIdleBars(ctx, canvas.width, canvas.height)
+
+      const currentStyle = styleRef.current
+      switch (currentStyle) {
+        case 'bars':
+          drawBars(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRef.current)
+          break
+        case 'wave':
+          drawWave(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRef.current)
+          break
+        case 'circular':
+          drawCircular(ctx, dataArrayRef.current, canvas.width, canvas.height, cachedPrimaryRef.current)
+          break
+      }
+    }
+
+    rafId = requestAnimationFrame(loop)
+
+    // Pause when tab hidden, resume when visible
+    const onVisibility = () => {
+      if (!document.hidden && isPlaying) {
+        lastFrameTime.current = 0 // force immediate redraw
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      stopped = true
+      cancelAnimationFrame(rafId)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [isPlaying])
 

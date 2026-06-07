@@ -132,14 +132,12 @@ const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   playPrev: () => {
-    const { queue, currentIndex, currentTime } = get()
+    const { queue, currentIndex } = get()
     if (queue.length === 0) return
 
-    // If more than 3 seconds in, restart current track
-    if (currentTime > 3) {
-      set({ currentTime: 0, progress: 0 })
-      return
-    }
+    // Note: the "restart if > 3s" guard is handled by doPlayPrev in usePlayer.ts
+    // using the real-time audio element currentTime. This store action only
+    // handles index advancement to avoid stale-store-value conflicts.
 
     let prevIndex = currentIndex - 1
     if (prevIndex < 0) prevIndex = queue.length - 1
